@@ -1,0 +1,328 @@
+"use client";
+
+import { useMemo, useState, useTransition } from "react";
+import toast from "react-hot-toast";
+import { BookmarkPlus, Minus, Plus, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { createSale } from "@/app/backstore/(app)/sales/actions";
+import { ColorSwatch } from "@/components/backstore/color-swatch";
+import { EmptyState } from "@/components/backstore/empty-state";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { round2 } from "@/lib/costing";
+import { formatTHB, rolls } from "@/lib/money";
+import { available, type ProductDTO } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+type Mode = "sell" | "reserve";
+type CartLine = { productId: string; qty: number; unitPrice: string };
+
+export function PosView({ products }: { products: ProductDTO[] }) {
+  const [mode, setMode] = useState<Mode>("sell");
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [q, setQ] = useState("");
+  const [type, setType] = useState<string | null>(null);
+  const [discount, setDiscount] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [deposit, setDeposit] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [note, setNote] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const types = useMemo(() => [...new Set(products.map((p) => p.type))].sort(), [products]);
+  const inCart = (id: string) => cart.find((l) => l.productId === id)?.qty ?? 0;
+
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return products.filter(
+      (p) =>
+        (!type || p.type === type) &&
+        (!needle || [p.brand, p.type, p.color, p.sku].some((s) => s.toLowerCase().includes(needle))),
+    );
+  }, [products, q, type]);
+
+  const subtotal = round2(cart.reduce((s, l) => s + l.qty * (Number(l.unitPrice) || 0), 0));
+  const disc = Math.min(Number(discount) || 0, subtotal);
+  const total = round2(subtotal - disc);
+  const count = cart.reduce((s, l) => s + l.qty, 0);
+
+  function add(p: ProductDTO) {
+    if (inCart(p.id) >= available(p)) return void toast.error(`Only ${available(p)} available`);
+    setCart((c) =>
+      c.some((l) => l.productId === p.id)
+        ? c.map((l) => (l.productId === p.id ? { ...l, qty: l.qty + 1 } : l))
+        : [...c, { productId: p.id, qty: 1, unitPrice: String(p.sellPriceThb) }],
+    );
+  }
+
+  function setQty(id: string, qty: number) {
+    const p = byId.get(id)!;
+    if (qty > available(p)) return void toast.error(`Only ${available(p)} available`);
+    setCart((c) => (qty <= 0 ? c.filter((l) => l.productId !== id) : c.map((l) => (l.productId === id ? { ...l, qty } : l))));
+  }
+
+  function reset() {
+    setCart([]);
+    setDiscount("");
+    setCustomerName("");
+    setPhone("");
+    setDeposit("");
+    setDueDate("");
+    setNote("");
+  }
+
+  function checkout() {
+    startTransition(async () => {
+      const res = await createSale({
+        mode,
+        items: cart.map((l) => ({ productId: l.productId, qty: l.qty, unitPrice: l.unitPrice || 0 })),
+        discount: disc,
+        customerName,
+        phone,
+        deposit: deposit !== "" ? deposit : null,
+        dueDate: dueDate || null,
+        note,
+      });
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(mode === "sell" ? `Sold · ${res.data.code} · ${formatTHB(total)}` : `Reserved for ${customerName} · ${res.data.code}`);
+      reset();
+      setSheetOpen(false);
+    });
+  }
+
+  const cartPanel = (
+    <div className="grid gap-4">
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        value={mode}
+        onValueChange={(v) => v && setMode(v as Mode)}
+        className="grid w-full grid-cols-2"
+      >
+        <ToggleGroupItem value="sell">
+          <ShoppingCart /> Sell
+        </ToggleGroupItem>
+        <ToggleGroupItem value="reserve">
+          <BookmarkPlus /> Reserve
+        </ToggleGroupItem>
+      </ToggleGroup>
+
+      {cart.length === 0 ? (
+        <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">Tap filament to add it</p>
+      ) : (
+        <ul className="grid gap-3">
+          {cart.map((l) => {
+            const p = byId.get(l.productId)!;
+            return (
+              <li key={l.productId} className="grid gap-2">
+                <div className="flex items-start gap-2">
+                  <ColorSwatch hex={p.colorHex} className="mt-0.5 size-5" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {p.brand} {p.type} · {p.color}
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">{p.sku}</div>
+                  </div>
+                  <Button variant="ghost" size="icon-xs" aria-label="Remove" onClick={() => setQty(p.id, 0)}>
+                    <X />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 pl-7">
+                  <div className="flex items-center">
+                    <Button variant="outline" size="icon" className="rounded-r-none" aria-label="Less" onClick={() => setQty(p.id, l.qty - 1)}>
+                      <Minus />
+                    </Button>
+                    <span className="flex h-8 w-9 items-center justify-center border-y text-sm tabular-nums">{l.qty}</span>
+                    <Button variant="outline" size="icon" className="rounded-l-none" aria-label="More" onClick={() => setQty(p.id, l.qty + 1)}>
+                      <Plus />
+                    </Button>
+                  </div>
+                  <span className="text-xs text-muted-foreground">×</span>
+                  <InputGroup className="w-28">
+                    <InputGroupAddon>฿</InputGroupAddon>
+                    <InputGroupInput
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      aria-label="Price per roll"
+                      value={l.unitPrice}
+                      onChange={(e) =>
+                        setCart((c) => c.map((x) => (x.productId === l.productId ? { ...x, unitPrice: e.target.value } : x)))
+                      }
+                      className="tabular-nums"
+                    />
+                  </InputGroup>
+                  <span className="ml-auto text-sm font-medium tabular-nums">{formatTHB(l.qty * (Number(l.unitPrice) || 0))}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <Separator />
+      <div className="grid gap-2 text-sm">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Subtotal · {rolls(count)}</span>
+          <span className="tabular-nums">{formatTHB(subtotal)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor="discount" className="text-muted-foreground">
+            Discount
+          </label>
+          <InputGroup className="w-32">
+            <InputGroupAddon>฿</InputGroupAddon>
+            <InputGroupInput id="discount" type="number" inputMode="decimal" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" className="text-right tabular-nums" />
+          </InputGroup>
+        </div>
+        <div className="flex items-baseline justify-between pt-1">
+          <span className="font-medium">Total</span>
+          <span className="text-2xl font-semibold tabular-nums text-primary">{formatTHB(total)}</span>
+        </div>
+      </div>
+
+      {mode === "reserve" && (
+        <FieldGroup className="gap-3 rounded-lg bg-accent/50 p-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Field>
+              <FieldLabel htmlFor="cname">Customer *</FieldLabel>
+              <Input id="cname" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="phone">Phone / LINE</FieldLabel>
+              <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="deposit">Deposit (THB)</FieldLabel>
+              <Input id="deposit" type="number" inputMode="decimal" min="0" value={deposit} onChange={(e) => setDeposit(e.target.value)} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="due">Pick up by</FieldLabel>
+              <Input id="due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </Field>
+          </div>
+        </FieldGroup>
+      )}
+      <Input placeholder={mode === "sell" ? "Customer / note (optional)" : "Note (optional)"} value={note} onChange={(e) => setNote(e.target.value)} />
+
+      <div className="flex gap-2">
+        <Button variant="outline" size="lg" disabled={!cart.length || pending} onClick={reset} aria-label="Clear cart">
+          <Trash2 />
+        </Button>
+        <Button
+          size="lg"
+          className="flex-1"
+          disabled={!cart.length || pending || (mode === "reserve" && !customerName.trim())}
+          onClick={checkout}
+        >
+          {pending ? "Saving…" : mode === "sell" ? `Charge ${formatTHB(total)}` : "Reserve rolls"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_380px] lg:items-start">
+      <div className="min-w-0">
+        <h1 className="mb-3 text-2xl font-semibold tracking-tight">POS</h1>
+        <InputGroup className="mb-3">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput placeholder="Search filament…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </InputGroup>
+        <div className="-mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
+          {[null, ...types].map((t) => (
+            <Button key={t ?? "all"} size="sm" variant={type === t ? "default" : "outline"} className="shrink-0 rounded-full" onClick={() => setType(t)}>
+              {t ?? "All"}
+            </Button>
+          ))}
+        </div>
+
+        {shown.length === 0 ? (
+          <EmptyState icon={Search} title="No filament found" />
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+            {shown.map((p) => {
+              const avail = available(p) - inCart(p.id);
+              const qty = inCart(p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => add(p)}
+                  disabled={avail <= 0}
+                  className={cn(
+                    "relative flex flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-all hover:border-primary/60 hover:shadow-sm active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+                    qty > 0 && "border-primary ring-1 ring-primary",
+                  )}
+                >
+                  {qty > 0 && (
+                    <span className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                      {qty}
+                    </span>
+                  )}
+                  <span className="h-10 w-10 rounded-full border-4 border-black/5 shadow-inner dark:border-white/10" style={{ backgroundColor: p.colorHex ?? "var(--muted)" }} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{p.color}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {p.brand} {p.type}
+                    </span>
+                  </span>
+                  <span className="mt-auto flex items-end justify-between gap-1">
+                    <span className="font-semibold tabular-nums">{formatTHB(p.sellPriceThb)}</span>
+                    <span className={cn("text-xs tabular-nums", avail <= 0 ? "text-destructive" : "text-muted-foreground")}>
+                      {avail <= 0 ? "None left" : `${avail} left`}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Desktop cart */}
+      <Card className="hidden lg:sticky lg:top-20 lg:flex">
+        <CardHeader>
+          <CardTitle>Cart</CardTitle>
+        </CardHeader>
+        <CardContent>{cartPanel}</CardContent>
+      </Card>
+
+      {/* Mobile cart bar + sheet */}
+      <div
+        className={cn(
+          "fixed inset-x-0 bottom-[calc(3.6rem+env(safe-area-inset-bottom))] z-30 p-3 transition-transform md:bottom-0 lg:hidden",
+          count === 0 && "pointer-events-none translate-y-[200%]",
+        )}
+      >
+        <Button size="lg" className="h-12 w-full justify-between rounded-xl text-base shadow-lg" onClick={() => setSheetOpen(true)}>
+          <span className="flex items-center gap-2">
+            <ShoppingCart /> {rolls(count)}
+          </span>
+          <span className="tabular-nums">{formatTHB(total)}</span>
+        </Button>
+      </div>
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent side="bottom" className="max-h-[88svh] overflow-y-auto rounded-t-2xl">
+          <SheetHeader className="pb-0">
+            <SheetTitle>Cart</SheetTitle>
+            <SheetDescription className="sr-only">Review and check out</SheetDescription>
+          </SheetHeader>
+          <div className="px-4 pb-6">{cartPanel}</div>
+        </SheetContent>
+      </Sheet>
+      <div className="h-16 lg:hidden" aria-hidden />
+    </div>
+  );
+}

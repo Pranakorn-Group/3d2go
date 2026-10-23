@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Currency {
+  THB
+  SGD
+}
+
+enum PurchaseStatus {
+  PLACED
+  SHIPPED
+  RECEIVED
+  CANCELLED
+}
+
+enum SaleStatus {
+  RESERVED
+  COMPLETED
+  CANCELLED
+}
+
+enum MovementKind {
+  RECEIVE
+  SALE
+  ADJUST
+}
+
+/// Brands and filament types are managed lists: they must exist before a product can use them.
+/// Product keeps the name (not an id) so existing screens read it directly; renames cascade in the action.
+model Brand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+model FilamentType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+/// A filament SKU. stockQty = rolls on hand (Amt), avgCostThb = weighted-average ต้นทุนต่อม้วน (Cost).
+model Product {
+  id           String   @id @default(cuid())
+  brand        String
+  type         String
+  color        String
+  colorHex     String?
+  sku          String   @unique
+  stockQty     Int      @default(0)
+  reservedQty  Int      @default(0)
+  avgCostThb   Decimal  @default(0) @db.Decimal(12, 2)
+  sellPriceThb Decimal  @default(0) @db.Decimal(12, 2)
+  refUrl       String?
+  note         String?
+  lowStockAt   Int      @default(2)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  purchaseItems PurchaseOrderItem[]
+  saleItems     SaleItem[]
+  movements     StockMovement[]
+
+  @@index([brand, type])
+}
+
+model PurchaseOrder {
+  id           String         @id @default(cuid())
+  code         String         @unique
+  supplier     String
+  currency     Currency       @default(SGD)
+  status       PurchaseStatus @default(PLACED)
+  /// Actual THB paid for the whole order (items + shipping − discount, after FX).
+  totalPaidThb Decimal?       @db.Decimal(12, 2)
+  /// Estimated SGD→THB rate, used to preview cost before the real THB total is known.
+  estRate      Decimal?       @db.Decimal(10, 4)
+  trackingNo   String?
+  note         String?
+  orderedAt    DateTime       @default(now())
+  receivedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  items PurchaseOrderItem[]
+}
+
+model PurchaseOrderItem {
+  id           String   @id @default(cuid())
+  poId         String
+  productId    String
+  qty          Int
+  /// Price per roll in the order currency.
+  unitPrice    Decimal  @db.Decimal(12, 2)
+  /// Share of totalPaidThb allocated to this line (set on receive).
+  allocatedThb Decimal? @db.Decimal(12, 2)
+  /// ต้นทุนต่อม้วน in THB (set on receive).
+  unitCostThb  Decimal? @db.Decimal(12, 2)
+
+  po      PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  product Product       @relation(fields: [productId], references: [id])
+
+  @@index([poId])
+  @@index([productId])
+}
+
+model Sale {
+  id           String     @id @default(cuid())
+  code         String     @unique
+  status       SaleStatus
+  customerName String?
+  phone        String?
+  deposit      Decimal?   @db.Decimal(12, 2)
+  dueDate      DateTime?
+  subtotal     Decimal    @db.Decimal(12, 2)
+  discount     Decimal    @default(0) @db.Decimal(12, 2)
+  total        Decimal    @db.Decimal(12, 2)
+  /// Sum of item cost at the time the sale completed.
+  costTotal    Decimal?   @db.Decimal(12, 2)
+  note         String?
+  createdAt    DateTime   @default(now())
+  completedAt  DateTime?
+
+  items SaleItem[]
+
+  @@index([status, createdAt])
+}
+
+model SaleItem {
+  id          String   @id @default(cuid())
+  saleId      String
+  productId   String
+  qty         Int
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  unitCostThb Decimal? @db.Decimal(12, 2)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+}
+
+model StockMovement {
+  id          String       @id @default(cuid())
+  productId   String
+  kind        MovementKind
+  qty         Int
+  unitCostThb Decimal?     @db.Decimal(12, 2)
+  refType     String?
+  refId       String?
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  /// scrypt "salt:hash" (see lib/password.ts)
+  passwordHash String
+  role         Role     @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

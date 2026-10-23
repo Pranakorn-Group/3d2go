@@ -1,0 +1,36 @@
+# Production stack for Komodo. Point a Komodo Stack at this file (Git repo mode, file path
+# deploy/compose.yml) and set the variables below in the stack's Environment.
+#   POSTGRES_PASSWORD  - database password
+#   SESSION_SECRET     - openssl rand -hex 32
+#   IMAGE_TAG          - optional, defaults to latest
+#   APP_PORT           - optional host port, defaults to 3000
+services:
+  app:
+    image: ghcr.io/pranakorn-group/3d2go:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/3d2go
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: 3d2go
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d 3d2go"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
