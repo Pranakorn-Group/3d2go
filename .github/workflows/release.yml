@@ -1,8 +1,11 @@
 name: Release
 
-# Publishing a GitHub release (e.g. tag v1.2.0) builds the image, pushes it to GHCR,
-# then asks Komodo to redeploy the stack.
+# Pushing to the `release` branch, or publishing a GitHub release (e.g. tag v1.2.0), builds the image,
+# pushes it to GHCR, then asks Komodo to redeploy the stack.
+#   git push origin main:release   # ship what's on main
 on:
+  push:
+    branches: [release]
   release:
     types: [published]
   workflow_dispatch:
@@ -42,8 +45,9 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
             type=sha,format=short
-            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' || (github.event_name == 'release' && !github.event.release.prerelease) }}
 
       - uses: docker/build-push-action@v6
         with:
@@ -57,7 +61,7 @@ jobs:
 
   deploy:
     needs: build
-    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: ubuntu-latest
     environment: production
     steps:
