@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { estimateArrival, leadTimes, type LeadTimes } from "@/lib/eta";
 import type { LastPrices } from "@/lib/last-price";
 
 export type Catalog = { brands: string[]; types: string[] };
@@ -26,4 +27,33 @@ export async function getLastPrices(): Promise<LastPrices> {
     entry[i.po.currency] ??= { price: Number(i.unitPrice), code: i.po.code };
   }
   return last;
+}
+
+/** Lead times learned from the last 100 received orders. */
+export async function getLeadTimes(): Promise<LeadTimes> {
+  const rows = await prisma.purchaseOrder.findMany({
+    where: { status: "RECEIVED", receivedAt: { not: null } },
+    select: { supplier: true, orderedAt: true, receivedAt: true },
+    orderBy: { receivedAt: "desc" },
+    take: 100,
+  });
+  return leadTimes(rows.map((r) => ({ ...r, receivedAt: r.receivedAt! })));
+}
+
+/** Earliest estimated arrival (ISO) per product across open orders, for "back in stock" hints. */
+export async function getRestockEtas(): Promise<Record<string, string>> {
+  const [lead, open] = await Promise.all([
+    getLeadTimes(),
+    prisma.purchaseOrder.findMany({
+      where: { status: { in: ["PLACED", "SHIPPED"] } },
+      select: { supplier: true, orderedAt: true, items: { select: { productId: true } } },
+    }),
+  ]);
+  const etas: Record<string, string> = {};
+  for (const po of open) {
+    const eta = estimateArrival(po, lead)?.toISOString();
+    if (!eta) continue;
+    for (const { productId } of po.items) if (!etas[productId] || eta < etas[productId]) etas[productId] = eta;
+  }
+  return etas;
 }

@@ -1,36 +1,22 @@
-# Production stack for Komodo. Point a Komodo Stack at this file (Git repo mode, file path
-# deploy/compose.yml) and set the variables below in the stack's Environment.
-#   POSTGRES_PASSWORD  - database password
-#   SESSION_SECRET     - openssl rand -hex 32
-#   IMAGE_TAG          - optional, defaults to latest
-#   APP_PORT           - optional host port, defaults to 3000
+# Production stack for Komodo, using a Neon Postgres database. Point a Komodo Stack at this file
+# (Git repo mode, file path deploy/compose.yml) and set the variables below in the stack's Environment.
+#   DATABASE_URL     - Neon pooled connection string (host has -pooler), e.g.
+#                      postgresql://user:pass@ep-xxx-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+#   DIRECT_URL       - optional, Neon direct connection string (no -pooler) used for migrations on start
+#   SESSION_SECRET   - openssl rand -hex 32
+#   PAYNOW_PROXY     - optional, PayNow mobile (+65…) or UEN; enables the PayNow QR in the POS
+#   PAYNOW_NAME      - optional, name shown on the QR
+#   IMAGE_TAG        - optional, defaults to latest
+#   APP_PORT         - optional host port, defaults to 3000
 services:
   app:
     image: ghcr.io/pranakorn-group/3d2go:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/3d2go
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL:-}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+      PAYNOW_PROXY: ${PAYNOW_PROXY:-}
+      PAYNOW_NAME: ${PAYNOW_NAME:-}
     ports:
       - "${APP_PORT:-3000}:3000"
-
-  db:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-      POSTGRES_DB: 3d2go
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d 3d2go"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-volumes:
-  pgdata:

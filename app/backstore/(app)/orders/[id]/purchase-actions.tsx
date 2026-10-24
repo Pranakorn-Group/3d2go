@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { PackageCheck, Trash2, Truck, XCircle } from "lucide-react";
+import { CalendarDays, PackageCheck, Trash2, Truck, XCircle } from "lucide-react";
 import { CostBreakdown } from "@/components/backstore/cost-breakdown";
 import { PaidInput, paidInSgd } from "@/components/backstore/paid-input";
 import {
@@ -32,7 +32,11 @@ import { Input } from "@/components/ui/input";
 import { sumValue } from "@/lib/costing";
 import { DEFAULT_THB_PER_SGD, rolls } from "@/lib/money";
 import type { Currency, PurchaseOrderDTO } from "@/lib/types";
-import { deletePurchase, receivePurchase, setPurchaseStatus } from "../actions";
+import { deletePurchase, receivePurchase, setPurchaseStatus, setReceivedDate } from "../actions";
+
+const today = () => new Date().toISOString().slice(0, 10);
+// Today keeps the current time so same-day stock movements stay in order; past days are date-only.
+const toReceivedAt = (date: string) => (date === today() ? new Date().toISOString() : date);
 
 function Confirm({
   trigger,
@@ -75,10 +79,61 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
   const [paid, setPaid] = useState(estimate !== null ? estimate.toFixed(2) : "");
   const [paidCurrency, setPaidCurrency] = useState<Currency>("SGD");
   const [rate, setRate] = useState(String(po.estRate ?? DEFAULT_THB_PER_SGD));
+  const [receivedOn, setReceivedOn] = useState(po.receivedAt ? po.receivedAt.slice(0, 10) : today());
+  const [dateOpen, setDateOpen] = useState(false);
   const paidSgd = paidInSgd(paid, paidCurrency, rate);
+  const minDate = po.orderedAt.slice(0, 10);
 
-  if (po.status === "RECEIVED" || po.status === "CANCELLED") {
-    return po.status === "CANCELLED" ? (
+  const dateField = (
+    <Field>
+      <FieldLabel htmlFor="received-on">Receive date</FieldLabel>
+      <Input id="received-on" type="date" min={minDate} max={today()} value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} required />
+    </Field>
+  );
+
+  if (po.status === "RECEIVED") {
+    return (
+      <Dialog
+        open={dateOpen}
+        onOpenChange={(o) => {
+          setDateOpen(o);
+          if (o) setReceivedOn(po.receivedAt ? po.receivedAt.slice(0, 10) : today());
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button variant="outline" disabled={pending}>
+            <CalendarDays /> Edit receive date
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Receive date of {po.code}</DialogTitle>
+            <DialogDescription>Stock and costs stay the same; only the date moves. It also tunes delivery estimates.</DialogDescription>
+          </DialogHeader>
+          {dateField}
+          <DialogFooter>
+            <Button
+              disabled={pending || !receivedOn}
+              onClick={() =>
+                startTransition(async () => {
+                  const keep = po.receivedAt?.slice(0, 10) === receivedOn;
+                  const res = await setReceivedDate(po.id, keep ? po.receivedAt! : toReceivedAt(receivedOn));
+                  if (!res.ok) return void toast.error(res.error);
+                  toast.success("Receive date updated");
+                  setDateOpen(false);
+                })
+              }
+            >
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (po.status === "CANCELLED") {
+    return (
       <Confirm
         trigger={
           <Button variant="destructive" disabled={pending}>
@@ -97,7 +152,7 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
           })
         }
       />
-    ) : null;
+    );
   }
 
   const act = (fn: () => Promise<{ ok: boolean; error?: string }>, msg: string) =>
@@ -134,6 +189,7 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
             setPaid(estimate !== null ? estimate.toFixed(2) : "");
             setPaidCurrency("SGD");
             setRate(String(po.estRate ?? DEFAULT_THB_PER_SGD));
+            setReceivedOn(today());
           }
         }}
       >
@@ -150,6 +206,7 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
               THB (items + shipping − discount) to lock in ต้นทุนต่อม้วน.
             </DialogDescription>
           </DialogHeader>
+          {dateField}
           <Field>
             <FieldLabel htmlFor="paid-total">Total paid</FieldLabel>
             <PaidInput
@@ -176,10 +233,10 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
           />
           <DialogFooter>
             <Button
-              disabled={pending || !(paidSgd !== null && paidSgd > 0)}
+              disabled={pending || !receivedOn || !(paidSgd !== null && paidSgd > 0)}
               onClick={() =>
                 startTransition(async () => {
-                  const res = await receivePurchase(po.id, paidSgd ?? 0);
+                  const res = await receivePurchase(po.id, paidSgd ?? 0, toReceivedAt(receivedOn));
                   if (!res.ok) return void toast.error(res.error);
                   toast.success(`${po.code} received — stock updated`);
                   setReceiveOpen(false);

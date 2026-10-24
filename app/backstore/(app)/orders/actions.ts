@@ -8,6 +8,8 @@ import { nextPurchaseCode } from "@/lib/codes";
 import { allocatePO, weightedAverage } from "@/lib/costing";
 import { prisma } from "@/lib/db";
 
+const startOfDay = (d: Date) => new Date(d.toISOString().slice(0, 10));
+
 const poSchema = z.object({
   id: z.string().optional(),
   supplier: z.string().trim().min(1, "Supplier is required"),
@@ -77,10 +79,13 @@ export async function setPurchaseStatus(id: string, status: "PLACED" | "SHIPPED"
  * Receive the whole order: spread the SGD actually paid across lines by value (ต้นทุนต่อม้วน),
  * add rolls to stock and roll the new cost into each product's weighted-average cost.
  */
-export async function receivePurchase(id: string, totalPaidSgd: number) {
+const receivedDate = z.coerce.date().refine((d) => d.getTime() <= Date.now() + 24 * 60 * 60 * 1000, "Receive date can't be in the future");
+
+export async function receivePurchase(id: string, totalPaidSgd: number, receivedAt: string) {
   return run(async () => {
     await requireAdmin();
     const paid = z.coerce.number().positive("Enter the SGD amount you paid").parse(totalPaidSgd);
+    const at = receivedDate.parse(receivedAt);
 
     await prisma.$transaction(async (tx) => {
       const po = await tx.purchaseOrder.findUniqueOrThrow({
@@ -90,6 +95,7 @@ export async function receivePurchase(id: string, totalPaidSgd: number) {
       if (po.status === "RECEIVED") throw new UserError("Order is already received");
       if (po.status === "CANCELLED") throw new UserError("Order is cancelled");
       if (po.items.length === 0) throw new UserError("Order has no items");
+      if (at < startOfDay(po.orderedAt)) throw new UserError("Receive date can't be before the order date");
 
       const allocation = allocatePO(
         po.items.map((i) => ({ qty: i.qty, unitPrice: Number(i.unitPrice) })),
@@ -118,16 +124,33 @@ export async function receivePurchase(id: string, totalPaidSgd: number) {
             refType: "PO",
             refId: po.id,
             note: po.code,
+            createdAt: at,
           },
         });
       }
 
       await tx.purchaseOrder.update({
         where: { id },
-        data: { status: "RECEIVED", receivedAt: new Date(), totalPaidSgd: paid },
+        data: { status: "RECEIVED", receivedAt: at, totalPaidSgd: paid },
       });
     });
 
+    revalidatePath("/backstore", "layout");
+  });
+}
+
+/** Correct the receive date of a received order (also moves its stock movements, which feed lead times). */
+export async function setReceivedDate(id: string, receivedAt: string) {
+  return run(async () => {
+    await requireAdmin();
+    const at = receivedDate.parse(receivedAt);
+    await prisma.$transaction(async (tx) => {
+      const po = await tx.purchaseOrder.findUniqueOrThrow({ where: { id } });
+      if (po.status !== "RECEIVED") throw new UserError("Order isn't received yet");
+      if (at < startOfDay(po.orderedAt)) throw new UserError("Receive date can't be before the order date");
+      await tx.purchaseOrder.update({ where: { id }, data: { receivedAt: at } });
+      await tx.stockMovement.updateMany({ where: { refType: "PO", refId: id, kind: "RECEIVE" }, data: { createdAt: at } });
+    });
     revalidatePath("/backstore", "layout");
   });
 }

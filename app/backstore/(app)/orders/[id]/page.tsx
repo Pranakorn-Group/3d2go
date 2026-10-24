@@ -6,9 +6,10 @@ import { PageHeader } from "@/components/backstore/page-header";
 import { StatusBadge } from "@/components/backstore/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCatalog, getLastPrices } from "@/lib/catalog";
+import { getCatalog, getLastPrices, getLeadTimes } from "@/lib/catalog";
 import { prisma } from "@/lib/db";
 import { purchaseInclude, toProduct, toPurchase } from "@/lib/dto";
+import { estimateArrival } from "@/lib/eta";
 import { formatDate } from "@/lib/money";
 import { PurchaseForm } from "../purchase-form";
 import { PurchaseActions } from "./purchase-actions";
@@ -24,6 +25,7 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
     : [];
   const catalog = editable ? await getCatalog() : { brands: [], types: [] };
   const lastPrices = editable ? await getLastPrices() : {};
+  const eta = editable ? estimateArrival(row, await getLeadTimes()) : null;
 
   return (
     <>
@@ -39,6 +41,7 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
             <StatusBadge status={po.status} />
             {po.supplier} · ordered {formatDate(po.orderedAt)}
             {po.receivedAt && ` · received ${formatDate(po.receivedAt)}`}
+            {eta && ` · est. arrival ${formatDate(eta)}`}
             {po.trackingNo && ` · tracking ${po.trackingNo}`}
           </span>
         }

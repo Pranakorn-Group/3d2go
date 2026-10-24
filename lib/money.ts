@@ -19,6 +19,11 @@ export function formatDate(d: Date | string | null | undefined) {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+/** "12 Nov" — short date for tight spots like POS cards. */
+export function formatDayMonth(d: Date | string) {
+  return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
 export function formatDateTime(d: Date | string | null | undefined) {
   if (!d) return "—";
   return new Date(d).toLocaleString("en-GB", {

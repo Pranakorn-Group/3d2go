@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { sumValue } from "@/lib/costing";
+import { getLeadTimes } from "@/lib/catalog";
 import { prisma } from "@/lib/db";
 import { purchaseInclude, toPurchase } from "@/lib/dto";
+import { estimateArrival } from "@/lib/eta";
 import type { PurchaseStatus } from "@/lib/generated/prisma/enums";
 import { formatDate, formatMoney, formatSGD, rolls } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -26,7 +28,7 @@ const TABS = [
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab: tabKey } = await searchParams;
   const tab = TABS.find((t) => t.key === tabKey) ?? TABS[0];
-  const [rows, counts] = await Promise.all([
+  const [rows, counts, lead] = await Promise.all([
     prisma.purchaseOrder.findMany({
       where: { status: { in: [...tab.statuses] as PurchaseStatus[] } },
       include: purchaseInclude,
@@ -34,7 +36,10 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       take: 200,
     }),
     prisma.purchaseOrder.groupBy({ by: ["status"], _count: true }),
+    getLeadTimes(),
   ]);
+  const etaOf = (o: (typeof orders)[number]) =>
+    o.status === "PLACED" || o.status === "SHIPPED" ? estimateArrival(o, lead) : null;
   const orders = rows.map(toPurchase);
   const count = (statuses: readonly string[]) =>
     counts.filter((c) => statuses.includes(c.status)).reduce((s, c) => s + c._count, 0);
@@ -92,7 +97,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                       </Link>
                     </TableCell>
                     <TableCell>{o.supplier}</TableCell>
-                    <TableCell className="text-muted-foreground">{formatDate(o.orderedAt)}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(o.orderedAt)}
+                      {o.receivedAt && <span className="block text-xs">received {formatDate(o.receivedAt)}</span>}
+                      {etaOf(o) && <span className="block text-xs">est. {formatDate(etaOf(o))}</span>}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{o.items.reduce((s, i) => s + i.qty, 0)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(sumValue(o.items), o.currency)}</TableCell>
                     <TableCell className="text-right tabular-nums">{o.totalPaidSgd === null ? "—" : formatSGD(o.totalPaidSgd)}</TableCell>
@@ -117,6 +126,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>
                       {formatDate(o.orderedAt)} · {rolls(o.items.reduce((s, i) => s + i.qty, 0))}
+                      {etaOf(o) && ` · est. ${formatDate(etaOf(o))}`}
                     </span>
                     <span className="tabular-nums">
                       {formatMoney(sumValue(o.items), o.currency)}

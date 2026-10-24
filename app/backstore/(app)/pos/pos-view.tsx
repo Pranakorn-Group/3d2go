@@ -17,7 +17,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { round2 } from "@/lib/costing";
-import { formatSGD, rolls } from "@/lib/money";
+import { formatDayMonth, formatSGD, rolls } from "@/lib/money";
 import { available, type ProductDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +27,16 @@ type Group = { key: string; items: ProductDTO[] };
 
 const groupKey = (p: ProductDTO) => `${p.brand} ${p.type}`;
 
-export function PosView({ products, paynow }: { products: ProductDTO[]; paynow: PayNowConfig | null }) {
+export function PosView({
+  products,
+  paynow,
+  restock,
+}: {
+  products: ProductDTO[];
+  paynow: PayNowConfig | null;
+  /** Earliest estimated arrival (ISO) per product on an open purchase order. */
+  restock: Record<string, string>;
+}) {
   const [mode, setMode] = useState<Mode>("sell");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [q, setQ] = useState("");
@@ -343,6 +352,9 @@ export function PosView({ products, paynow }: { products: ProductDTO[]; paynow: 
                             {avail <= 0 ? "None left" : `${avail} left`}
                           </span>
                         </span>
+                        {restock[p.id] && available(p) <= p.lowStockAt && (
+                          <span className="text-xs text-muted-foreground">Back ~{formatDayMonth(restock[p.id])}</span>
+                        )}
                       </button>
                     );
                   })}
