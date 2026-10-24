@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Rebuilds the home-screen icons from the logo mark (same artwork as app/icon.svg). Needs rsvg-convert (librsvg).
+# Full-bleed square: iOS and Android apply their own corner mask, so the artwork must reach the edges.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+mark='<g fill="none" stroke="#ecfeff" stroke-linecap="round">
+    <circle cx="15" cy="17" r="9.5" stroke-width="2"/>
+    <circle cx="15" cy="17" r="6.25" stroke-width="3" stroke-dasharray="30 9.3" opacity="0.85"/>
+    <path d="M21 12.2 C23.5 9.5 25.5 8 27.5 7.5" stroke-width="2"/>
+  </g>
+  <circle cx="15" cy="17" r="2.6" fill="#ecfeff"/>
+  <circle cx="15" cy="17" r="1" fill="#0891b2"/>'
+
+# $1 = scale of the mark inside the square (maskable icons keep it within the 80% safe zone).
+svg() {
+  local offset; offset=$(echo "16 - 16 * $1" | bc -l)
+  printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#0891b2"/><g transform="translate(%s %s) scale(%s)">%s</g></svg>' \
+    "$offset" "$offset" "$1" "$mark"
+}
+
+mkdir -p public/icons
+svg 0.9 | rsvg-convert -w 180 -h 180 -o app/apple-icon.png
+svg 0.9 | rsvg-convert -w 192 -h 192 -o public/icons/icon-192.png
+svg 0.9 | rsvg-convert -w 512 -h 512 -o public/icons/icon-512.png
+svg 0.7 | rsvg-convert -w 512 -h 512 -o public/icons/maskable-512.png

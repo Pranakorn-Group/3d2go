@@ -12,8 +12,8 @@ export default async function BackstoreLayout({ children }: { children: React.Re
       <AppSidebar user={{ email: user.email, name: user.name }} />
       <SidebarInset className="min-w-0">
         <TopBar />
-        {/* Bottom padding clears the phone tab bar (h-14 + safe area). */}
-        <div className="mx-auto w-full max-w-7xl flex-1 p-4 pb-[calc(--spacing(20)_+_env(safe-area-inset-bottom))] md:p-6 md:pb-10">
+        {/* Bottom padding clears the floating phone tab bar (4rem + safe area); side padding clears the landscape Dynamic Island. */}
+        <div className="mx-auto w-full max-w-7xl flex-1 p-4 pr-[max(--spacing(4),env(safe-area-inset-right))] pb-[calc(--spacing(24)_+_env(safe-area-inset-bottom))] pl-[max(--spacing(4),env(safe-area-inset-left))] md:p-6 md:pr-[max(--spacing(6),env(safe-area-inset-right))] md:pb-10 md:pl-[max(--spacing(6),env(safe-area-inset-left))]">
           {children}
         </div>
       </SidebarInset>

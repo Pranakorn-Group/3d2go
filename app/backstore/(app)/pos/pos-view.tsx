@@ -376,11 +376,11 @@ export function PosView({
       {/* Mobile cart bar + sheet */}
       <div
         className={cn(
-          "fixed inset-x-0 bottom-[calc(3.6rem+env(safe-area-inset-bottom))] z-30 p-3 transition-transform md:bottom-0 lg:hidden",
+          "fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 p-3 pr-[max(--spacing(3),env(safe-area-inset-right))] pl-[max(--spacing(3),env(safe-area-inset-left))] transition-transform md:bottom-0 lg:hidden",
           count === 0 && "pointer-events-none translate-y-[200%]",
         )}
       >
-        <Button size="lg" className="h-12 w-full justify-between rounded-xl text-base shadow-lg" onClick={() => setSheetOpen(true)}>
+        <Button size="lg" className="h-12 w-full justify-between rounded-full px-5 text-base shadow-lg" onClick={() => setSheetOpen(true)}>
           <span className="flex items-center gap-2">
             <ShoppingCart /> {rolls(count)}
           </span>

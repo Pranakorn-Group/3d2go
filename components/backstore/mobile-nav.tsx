@@ -9,7 +9,10 @@ import { activeItem, NAV, TABS } from "./nav";
 
 const tabClass = "flex h-14 w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-muted-foreground transition-colors";
 
-/** Bottom tab bar for phones. "More" opens the sidebar sheet with every page, settings and sign out. */
+/**
+ * Bottom tab bar for phones: a floating glass pill above the home indicator. "More" opens the sidebar sheet with every
+ * page, settings and sign out. Its height + gap (4rem + safe area) is what the page padding and POS cart bar clear.
+ */
 export function MobileNav() {
   const pathname = usePathname();
   const { openMobile, setOpenMobile } = useSidebar();
@@ -19,7 +22,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+      className="glass fixed right-[max(--spacing(3),env(safe-area-inset-right))] bottom-[calc(--spacing(2)+env(safe-area-inset-bottom))] left-[max(--spacing(3),env(safe-area-inset-left))] z-40 overflow-hidden rounded-[28px] md:hidden"
     >
       <ul className="grid grid-cols-5">
         {TABS.map((tab) => {

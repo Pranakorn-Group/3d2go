@@ -15,7 +15,8 @@ export function TopBar() {
   const group = item && groupOf(item);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/90 px-3 backdrop-blur md:px-4">
+    // Safe-area padding keeps it clear of the Dynamic Island: on top when installed full-screen, on the side in landscape.
+    <header className="sticky top-0 z-30 flex h-[calc(--spacing(14)+env(safe-area-inset-top))] items-center gap-2 border-b bg-background/90 pt-[env(safe-area-inset-top)] max-md:glass max-md:border-b-0 pr-[max(--spacing(3),env(safe-area-inset-right))] pl-[max(--spacing(3),env(safe-area-inset-left))] backdrop-blur md:pr-[max(--spacing(4),env(safe-area-inset-right))] md:pl-[max(--spacing(4),env(safe-area-inset-left))]">
       <SidebarTrigger className="hidden md:inline-flex" />
       <Separator orientation="vertical" className="mx-1 hidden h-4! md:block" />
       <Link href="/backstore" aria-label="Dashboard" className="md:hidden">
