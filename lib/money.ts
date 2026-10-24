@@ -1,13 +1,15 @@
-const thb = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const amount = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** SGD is the store's base currency: prices, sales and stock cost. */
+export function formatSGD(n: number | null | undefined) {
+  return `S$${amount.format(n ?? 0)}`;
+}
 
 export function formatTHB(n: number | null | undefined) {
-  return `฿${thb.format(n ?? 0)}`;
+  return `฿${amount.format(n ?? 0)}`;
 }
 
-export function formatSGD(n: number | null | undefined) {
-  return `S$${thb.format(n ?? 0)}`;
-}
-
+/** Purchase-order item prices can still be in THB. */
 export function formatMoney(n: number | null | undefined, currency: "THB" | "SGD") {
   return currency === "SGD" ? formatSGD(n) : formatTHB(n);
 }
@@ -30,3 +32,6 @@ export function formatDateTime(d: Date | string | null | undefined) {
 export function rolls(n: number) {
   return `${n} ${Math.abs(n) === 1 ? "roll" : "rolls"}`;
 }
+
+/** Default THB per SGD rate, pre-filled wherever a rate is needed and none is saved yet. */
+export const DEFAULT_THB_PER_SGD = 26.1;

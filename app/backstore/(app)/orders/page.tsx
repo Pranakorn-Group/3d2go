@@ -11,7 +11,7 @@ import { sumValue } from "@/lib/costing";
 import { prisma } from "@/lib/db";
 import { purchaseInclude, toPurchase } from "@/lib/dto";
 import type { PurchaseStatus } from "@/lib/generated/prisma/enums";
-import { formatDate, formatMoney, formatTHB, rolls } from "@/lib/money";
+import { formatDate, formatMoney, formatSGD, rolls } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Purchase orders" };
@@ -79,7 +79,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Rolls</TableHead>
                   <TableHead className="text-right">Items total</TableHead>
-                  <TableHead className="text-right">THB paid</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
                   <TableHead className="pr-4">Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -95,7 +95,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                     <TableCell className="text-muted-foreground">{formatDate(o.orderedAt)}</TableCell>
                     <TableCell className="text-right tabular-nums">{o.items.reduce((s, i) => s + i.qty, 0)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(sumValue(o.items), o.currency)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{o.totalPaidThb === null ? "—" : formatTHB(o.totalPaidThb)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{o.totalPaidSgd === null ? "—" : formatSGD(o.totalPaidSgd)}</TableCell>
                     <TableCell className="pr-4">
                       <StatusBadge status={o.status} />
                     </TableCell>
@@ -120,7 +120,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                     </span>
                     <span className="tabular-nums">
                       {formatMoney(sumValue(o.items), o.currency)}
-                      {o.totalPaidThb !== null && ` · ${formatTHB(o.totalPaidThb)}`}
+                      {o.totalPaidSgd !== null && ` · ${formatSGD(o.totalPaidSgd)}`}
                     </span>
                   </div>
                 </Card>

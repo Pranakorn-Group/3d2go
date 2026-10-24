@@ -27,7 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { formatDate, formatDateTime, formatTHB } from "@/lib/money";
+import { formatDate, formatDateTime, formatSGD } from "@/lib/money";
 import type { SaleDTO } from "@/lib/types";
 import { cancelSale, completeReservation } from "./actions";
 
@@ -62,9 +62,9 @@ function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
           <li key={i.id} className="flex items-center justify-between gap-3 text-sm">
             <ProductLabel product={i.product} />
             <span className="shrink-0 text-right tabular-nums">
-              {i.qty} × {formatTHB(i.unitPrice)}
-              {i.unitCostThb !== null && (
-                <span className="block text-xs text-muted-foreground">cost {formatTHB(i.unitCostThb)}</span>
+              {i.qty} × {formatSGD(i.unitPrice)}
+              {i.unitCostSgd !== null && (
+                <span className="block text-xs text-muted-foreground">cost {formatSGD(i.unitCostSgd)}</span>
               )}
             </span>
           </li>
@@ -73,21 +73,21 @@ function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
       <Separator />
       <dl className="grid grid-cols-2 gap-y-1 text-sm">
         <dt className="text-muted-foreground">Subtotal</dt>
-        <dd className="text-right tabular-nums">{formatTHB(sale.subtotal)}</dd>
+        <dd className="text-right tabular-nums">{formatSGD(sale.subtotal)}</dd>
         {sale.discount > 0 && (
           <>
             <dt className="text-muted-foreground">Discount</dt>
-            <dd className="text-right tabular-nums">−{formatTHB(sale.discount)}</dd>
+            <dd className="text-right tabular-nums">−{formatSGD(sale.discount)}</dd>
           </>
         )}
         <dt className="font-medium">Total</dt>
-        <dd className="text-right font-semibold tabular-nums">{formatTHB(sale.total)}</dd>
+        <dd className="text-right font-semibold tabular-nums">{formatSGD(sale.total)}</dd>
         {sale.deposit !== null && (
           <>
             <dt className="text-muted-foreground">Deposit paid</dt>
-            <dd className="text-right tabular-nums">{formatTHB(sale.deposit)}</dd>
+            <dd className="text-right tabular-nums">{formatSGD(sale.deposit)}</dd>
             <dt className="text-muted-foreground">Balance due</dt>
-            <dd className="text-right tabular-nums">{formatTHB(sale.total - sale.deposit)}</dd>
+            <dd className="text-right tabular-nums">{formatSGD(sale.total - sale.deposit)}</dd>
           </>
         )}
         {sale.dueDate && (
@@ -100,7 +100,7 @@ function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
           <>
             <dt className="text-muted-foreground">Profit</dt>
             <dd className={`text-right tabular-nums ${p < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
-              {formatTHB(p)}
+              {formatSGD(p)}
             </dd>
           </>
         )}
@@ -176,10 +176,10 @@ export function SalesList({ sales }: { sales: SaleDTO[] }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-semibold tabular-nums">{formatTHB(s.total)}</div>
+                  <div className="font-semibold tabular-nums">{formatSGD(s.total)}</div>
                   {p !== null && s.status === "COMPLETED" && (
                     <div className={`text-xs tabular-nums ${p < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
-                      +{formatTHB(p)}
+                      +{formatSGD(p)}
                     </div>
                   )}
                 </div>

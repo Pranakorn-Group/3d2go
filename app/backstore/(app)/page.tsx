@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlertTriangle, BookmarkCheck, Boxes, Coins, PiggyBank, Plus, ShoppingCart, Truck } from "lucide-react";
+import { AlertTriangle, BookmarkCheck, Boxes, Coins, PiggyBank, Plus, ShoppingCart, Tags, Truck } from "lucide-react";
 import { ProductLabel } from "@/components/backstore/color-swatch";
 import { StatCard } from "@/components/backstore/stat-card";
 import { StatusBadge } from "@/components/backstore/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { startOfMonthBkk, startOfTodayBkk } from "@/lib/dates";
 import { prisma } from "@/lib/db";
-import { formatDate, formatDateTime, formatTHB, rolls as rollCount } from "@/lib/money";
+import { formatDate, formatDateTime, formatSGD, rolls as rollCount } from "@/lib/money";
+import { formatPct, summarizeStock, type StockSummary } from "@/lib/profit";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -16,11 +18,40 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
+function profitTone(n: number) {
+  return n < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400";
+}
+
+type BrandRow = StockSummary & { brand: string; soldRolls: number; soldRevenue: number; soldProfit: number };
+
+function BrandCells({ row }: { row: Omit<BrandRow, "brand"> }) {
+  return (
+    <>
+      <TableCell className="text-right tabular-nums">{row.rolls}</TableCell>
+      <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatSGD(row.cost)}</TableCell>
+      <TableCell className="text-right tabular-nums">
+        <span className={profitTone(row.profit)}>{formatSGD(row.profit)}</span>
+        <div className="text-xs text-muted-foreground">{formatPct(row.pct)}</div>
+      </TableCell>
+      <TableCell className="hidden text-right tabular-nums md:table-cell">
+        {formatSGD(row.soldRevenue)}
+        <div className="text-xs text-muted-foreground">{rollCount(row.soldRolls)}</div>
+      </TableCell>
+      <TableCell className="hidden pr-6 text-right tabular-nums md:table-cell">
+        <span className={profitTone(row.soldProfit)}>{formatSGD(row.soldProfit)}</span>
+        <div className="text-xs text-muted-foreground">
+          {formatPct(row.soldRevenue > 0 ? (row.soldProfit / row.soldRevenue) * 100 : null)}
+        </div>
+      </TableCell>
+    </>
+  );
+}
+
 export default async function DashboardPage() {
   const today = startOfTodayBkk();
   const month = startOfMonthBkk();
 
-  const [products, todaySales, monthSales, openPOs, reservations, recentSales] = await Promise.all([
+  const [products, todaySales, monthSales, openPOs, reservations, recentSales, monthItems] = await Promise.all([
     prisma.product.findMany({ where: { active: true } }),
     prisma.sale.aggregate({
       where: { status: "COMPLETED", completedAt: { gte: today } },
@@ -47,9 +78,13 @@ export default async function DashboardPage() {
       orderBy: { completedAt: "desc" },
       take: 6,
     }),
+    prisma.saleItem.findMany({
+      where: { sale: { status: "COMPLETED", completedAt: { gte: month } } },
+      select: { qty: true, unitPrice: true, unitCostSgd: true, product: { select: { brand: true } } },
+    }),
   ]);
 
-  const stockValue = products.reduce((s, p) => s + p.stockQty * Number(p.avgCostThb), 0);
+  const stockValue = products.reduce((s, p) => s + p.stockQty * Number(p.avgCostSgd), 0);
   const rollsOnHand = products.reduce((s, p) => s + p.stockQty, 0);
   const lowStock = products
     .filter((p) => p.stockQty - p.reservedQty <= p.lowStockAt)
@@ -58,6 +93,36 @@ export default async function DashboardPage() {
   const monthProfit = monthRevenue - Number(monthSales._sum.costTotal ?? 0);
   const incomingRolls = openPOs.reduce((s, po) => s + po.items.reduce((a, i) => a + i.qty, 0), 0);
   const reservedValue = reservations.reduce((s, r) => s + Number(r.total), 0);
+  const stockSummary = summarizeStock(products.map((p) => ({ ...p, avgCostSgd: Number(p.avgCostSgd), sellPriceSgd: Number(p.sellPriceSgd) })));
+
+  // Per brand: what's on the shelf (est. profit at current prices) and what sold this month (line prices, before bill discounts).
+  const sold = new Map<string, { rolls: number; revenue: number; profit: number }>();
+  for (const i of monthItems) {
+    const s = sold.get(i.product.brand) ?? { rolls: 0, revenue: 0, profit: 0 };
+    const revenue = i.qty * Number(i.unitPrice);
+    s.rolls += i.qty;
+    s.revenue += revenue;
+    s.profit += revenue - i.qty * Number(i.unitCostSgd ?? 0);
+    sold.set(i.product.brand, s);
+  }
+  const brandNames = [...new Set([...products.map((p) => p.brand), ...sold.keys()])].sort();
+  const brandRows: BrandRow[] = brandNames
+    .map((brand) => {
+      const stock = summarizeStock(
+        products
+          .filter((p) => p.brand === brand)
+          .map((p) => ({ ...p, avgCostSgd: Number(p.avgCostSgd), sellPriceSgd: Number(p.sellPriceSgd) })),
+      );
+      const s = sold.get(brand);
+      return { brand, ...stock, soldRolls: s?.rolls ?? 0, soldRevenue: s?.revenue ?? 0, soldProfit: s?.profit ?? 0 };
+    })
+    .sort((a, b) => b.cost - a.cost);
+  const brandTotal = {
+    ...stockSummary,
+    soldRolls: brandRows.reduce((s, r) => s + r.soldRolls, 0),
+    soldRevenue: brandRows.reduce((s, r) => s + r.soldRevenue, 0),
+    soldProfit: brandRows.reduce((s, r) => s + r.soldProfit, 0),
+  };
 
   return (
     <>
@@ -83,14 +148,19 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Today's sales" value={formatTHB(Number(todaySales._sum.total ?? 0))} hint={`${todaySales._count} bills`} icon={Coins} />
+        <StatCard label="Today's sales" value={formatSGD(Number(todaySales._sum.total ?? 0))} hint={`${todaySales._count} bills`} icon={Coins} />
         <StatCard
           label="Profit this month"
-          value={formatTHB(monthProfit)}
-          hint={`on ${formatTHB(monthRevenue)} revenue`}
+          value={formatSGD(monthProfit)}
+          hint={`on ${formatSGD(monthRevenue)} revenue`}
           icon={PiggyBank}
         />
-        <StatCard label="Stock value (cost)" value={formatTHB(stockValue)} hint={`${rollCount(rollsOnHand)} · ${products.length} SKUs`} icon={Boxes} />
+        <StatCard
+          label="Stock value (cost)"
+          value={formatSGD(stockValue)}
+          hint={`${rollCount(rollsOnHand)} · est. profit ${formatSGD(stockSummary.profit)} (${formatPct(stockSummary.pct)})`}
+          icon={Boxes}
+        />
         <StatCard
           label="Incoming"
           value={rollCount(incomingRolls)}
@@ -98,6 +168,52 @@ export default async function DashboardPage() {
           icon={Truck}
         />
       </div>
+
+      <Card className="mt-6 gap-2">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Tags className="size-4 text-primary" /> By brand
+          </CardTitle>
+          <CardDescription>Est. profit if stock on hand sells at current prices · sales this month</CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          {brandRows.length === 0 ? (
+            <Empty>No filament yet.</Empty>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-6">Brand</TableHead>
+                  <TableHead className="text-right">Rolls</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">Stock cost</TableHead>
+                  <TableHead className="text-right">Est. profit</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">Sold this month</TableHead>
+                  <TableHead className="hidden pr-6 text-right md:table-cell">Profit this month</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {brandRows.map((r) => (
+                  <TableRow key={r.brand}>
+                    <TableCell className="pl-6">
+                      <div className="font-medium">{r.brand}</div>
+                      <div className="text-xs text-muted-foreground">{r.skus} SKUs</div>
+                    </TableCell>
+                    <BrandCells row={r} />
+                  </TableRow>
+                ))}
+              </TableBody>
+              {brandRows.length > 1 && (
+                <TableFooter>
+                  <TableRow>
+                    <TableCell className="pl-6 font-medium">Total</TableCell>
+                    <BrandCells row={brandTotal} />
+                  </TableRow>
+                </TableFooter>
+              )}
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card className="gap-2">
@@ -138,7 +254,7 @@ export default async function DashboardPage() {
             </CardTitle>
             <CardAction>
               <Button asChild variant="link" size="sm">
-                <Link href="/backstore/sales?tab=reserved">{formatTHB(reservedValue)} held</Link>
+                <Link href="/backstore/sales?tab=reserved">{formatSGD(reservedValue)} held</Link>
               </Button>
             </CardAction>
           </CardHeader>
@@ -156,7 +272,7 @@ export default async function DashboardPage() {
                         {r.dueDate && ` · by ${formatDate(r.dueDate)}`}
                       </div>
                     </div>
-                    <span className="shrink-0 tabular-nums">{formatTHB(Number(r.total))}</span>
+                    <span className="shrink-0 tabular-nums">{formatSGD(Number(r.total))}</span>
                   </li>
                 ))}
               </ul>
@@ -226,9 +342,9 @@ export default async function DashboardPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="tabular-nums">{formatTHB(Number(s.total))}</div>
+                        <div className="tabular-nums">{formatSGD(Number(s.total))}</div>
                         <div className={`text-xs tabular-nums ${profit < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
-                          +{formatTHB(profit)}
+                          +{formatSGD(profit)}
                         </div>
                       </div>
                     </li>

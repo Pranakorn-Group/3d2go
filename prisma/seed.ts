@@ -40,10 +40,10 @@ async function main() {
         colorHex,
         sku,
         stockQty: qty,
-        avgCostThb: cost,
-        sellPriceThb: price,
+        avgCostSgd: cost,
+        sellPriceSgd: price,
         refUrl: brand === "Bambu" ? "https://store.bambulab.com/" : null,
-        movements: qty ? { create: { kind: "ADJUST", qty, unitCostThb: cost, note: "Opening stock" } } : undefined,
+        movements: qty ? { create: { kind: "ADJUST", qty, unitCostSgd: cost, note: "Opening stock" } } : undefined,
       },
     });
   }

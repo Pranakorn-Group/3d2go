@@ -29,13 +29,13 @@ const productSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => null)),
   sku: z.string().trim().min(1, "SKU is required").toUpperCase(),
-  sellPriceThb: z.coerce.number().min(0, "Price can't be negative"),
+  sellPriceSgd: z.coerce.number().min(0, "Price can't be negative"),
   refUrl: optionalText,
   note: optionalText,
   lowStockAt: z.coerce.number().int().min(0).default(2),
   // Only used when creating: opening stock with its ต้นทุนต่อม้วน.
   openingQty: z.coerce.number().int().min(0).default(0),
-  openingCostThb: z.coerce.number().min(0).default(0),
+  openingCostSgd: z.coerce.number().min(0).default(0),
 });
 
 export type ProductInput = z.input<typeof productSchema>;
@@ -53,14 +53,14 @@ async function assertInCatalog(brand: string, type: string) {
 export async function saveProduct(input: ProductInput) {
   return run(async () => {
     await requireAdmin();
-    const { id, openingQty, openingCostThb, ...data } = productSchema.parse(input);
+    const { id, openingQty, openingCostSgd, ...data } = productSchema.parse(input);
     await assertInCatalog(data.brand, data.type);
 
     const product = id
       ? await prisma.product.update({ where: { id }, data })
       : await prisma.$transaction(async (tx) => {
           const created = await tx.product.create({
-            data: { ...data, stockQty: openingQty, avgCostThb: openingCostThb },
+            data: { ...data, stockQty: openingQty, avgCostSgd: openingCostSgd },
           });
           if (openingQty > 0) {
             await tx.stockMovement.create({
@@ -68,7 +68,7 @@ export async function saveProduct(input: ProductInput) {
                 productId: created.id,
                 kind: "ADJUST",
                 qty: openingQty,
-                unitCostThb: openingCostThb,
+                unitCostSgd: openingCostSgd,
                 note: "Opening stock",
               },
             });
@@ -86,9 +86,9 @@ const bulkSchema = z.object({
   type: z.string().trim().min(1, "Pick a type"),
   colors: z.array(z.object({ color: z.string(), colorHex: z.string().nullable() })).max(200),
   // Shared by every row.
-  sellPriceThb: z.coerce.number().min(0, "Price can't be negative"),
+  sellPriceSgd: z.coerce.number().min(0, "Price can't be negative"),
   openingQty: z.coerce.number().int("Qty must be a whole number").min(0).default(0),
-  openingCostThb: z.coerce.number().min(0, "Cost can't be negative").default(0),
+  openingCostSgd: z.coerce.number().min(0, "Cost can't be negative").default(0),
   note: optionalText,
   lowStockAt: z.coerce.number().int().min(0).default(2),
   refUrl: optionalText,
@@ -98,7 +98,7 @@ const bulkSchema = z.object({
 export async function bulkCreateProducts(input: z.input<typeof bulkSchema>) {
   return run(async () => {
     await requireAdmin();
-    const { brand, type, colors, sellPriceThb, openingQty, openingCostThb, note, lowStockAt, refUrl } =
+    const { brand, type, colors, sellPriceSgd, openingQty, openingCostSgd, note, lowStockAt, refUrl } =
       bulkSchema.parse(input);
     await assertInCatalog(brand, type);
 
@@ -121,14 +121,14 @@ export async function bulkCreateProducts(input: z.input<typeof bulkSchema>) {
             color: r.color,
             colorHex: r.colorHex,
             sku: r.sku,
-            sellPriceThb,
+            sellPriceSgd,
             stockQty: openingQty,
-            avgCostThb: openingCostThb,
+            avgCostSgd: openingCostSgd,
             note,
             lowStockAt,
             refUrl,
             movements: openingQty
-              ? { create: { kind: "ADJUST", qty: openingQty, unitCostThb: openingCostThb, note: "Opening stock" } }
+              ? { create: { kind: "ADJUST", qty: openingQty, unitCostSgd: openingCostSgd, note: "Opening stock" } }
               : undefined,
           },
         });
@@ -137,6 +137,29 @@ export async function bulkCreateProducts(input: z.input<typeof bulkSchema>) {
 
     revalidatePath("/backstore", "layout");
     return rows.length;
+  });
+}
+
+const bulkEditSchema = z.object({
+  ids: z.array(z.string()).min(1, "Pick at least one color").max(500),
+  // Each field is optional — only the ones given are changed.
+  sellPriceSgd: z.coerce.number().min(0, "Price can't be negative").optional(),
+  lowStockAt: z.coerce.number().int("Alert must be a whole number").min(0).optional(),
+  refUrl: optionalText,
+  note: optionalText,
+});
+
+/** Applies the same price / alert / ref / note to many products at once (e.g. a whole brand + type). */
+export async function bulkUpdateProducts(input: z.input<typeof bulkEditSchema>) {
+  return run(async () => {
+    await requireAdmin();
+    const { ids, ...data } = bulkEditSchema.parse(input);
+    const changes = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+    if (!Object.keys(changes).length) throw new UserError("Nothing to change");
+
+    const { count } = await prisma.product.updateMany({ where: { id: { in: ids } }, data: changes });
+    revalidatePath("/backstore", "layout");
+    return count;
   });
 }
 
@@ -192,13 +215,13 @@ const adjustSchema = z.object({
   delta: z.coerce.number().int().refine((n) => n !== 0, "Change can't be zero"),
   note: z.string().trim().min(1, "Please give a reason"),
   // Cost per roll for stock added outside a purchase order (optional, keeps avg cost if empty).
-  unitCostThb: z.coerce.number().min(0).nullable().optional(),
+  unitCostSgd: z.coerce.number().min(0).nullable().optional(),
 });
 
 export async function adjustStock(input: z.input<typeof adjustSchema>) {
   return run(async () => {
     await requireAdmin();
-    const { productId, delta, note, unitCostThb } = adjustSchema.parse(input);
+    const { productId, delta, note, unitCostSgd } = adjustSchema.parse(input);
 
     await prisma.$transaction(async (tx) => {
       const p = await tx.product.findUniqueOrThrow({ where: { id: productId } });
@@ -206,13 +229,13 @@ export async function adjustStock(input: z.input<typeof adjustSchema>) {
       if (newQty < 0) throw new UserError(`Only ${p.stockQty} in stock`);
       if (newQty < p.reservedQty) throw new UserError(`${p.reservedQty} rolls are reserved — cancel reservations first`);
 
-      let avg = Number(p.avgCostThb);
-      if (delta > 0 && unitCostThb != null) {
-        avg = weightedAverage(p.stockQty, avg, delta, unitCostThb);
+      let avg = Number(p.avgCostSgd);
+      if (delta > 0 && unitCostSgd != null) {
+        avg = weightedAverage(p.stockQty, avg, delta, unitCostSgd);
       }
-      await tx.product.update({ where: { id: productId }, data: { stockQty: newQty, avgCostThb: avg } });
+      await tx.product.update({ where: { id: productId }, data: { stockQty: newQty, avgCostSgd: avg } });
       await tx.stockMovement.create({
-        data: { productId, kind: "ADJUST", qty: delta, unitCostThb: unitCostThb ?? p.avgCostThb, note },
+        data: { productId, kind: "ADJUST", qty: delta, unitCostSgd: unitCostSgd ?? p.avgCostSgd, note },
       });
     });
 

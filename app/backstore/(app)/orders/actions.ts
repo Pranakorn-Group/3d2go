@@ -12,7 +12,7 @@ const poSchema = z.object({
   id: z.string().optional(),
   supplier: z.string().trim().min(1, "Supplier is required"),
   currency: z.enum(["THB", "SGD"]),
-  totalPaidThb: z.coerce.number().positive("THB paid must be more than 0").nullable().optional(),
+  totalPaidSgd: z.coerce.number().positive("SGD paid must be more than 0").nullable().optional(),
   estRate: z.coerce.number().positive("Rate must be more than 0").nullable().optional(),
   trackingNo: z
     .string()
@@ -44,7 +44,6 @@ export async function savePurchase(input: PurchaseInput) {
   return run(async () => {
     await requireAdmin();
     const { id, items, ...data } = poSchema.parse(input);
-    if (data.currency === "THB") data.estRate = null;
 
     const po = await prisma.$transaction(async (tx) => {
       if (id) {
@@ -75,13 +74,13 @@ export async function setPurchaseStatus(id: string, status: "PLACED" | "SHIPPED"
 }
 
 /**
- * Receive the whole order: spread the THB actually paid across lines by value (ต้นทุนต่อม้วน),
+ * Receive the whole order: spread the SGD actually paid across lines by value (ต้นทุนต่อม้วน),
  * add rolls to stock and roll the new cost into each product's weighted-average cost.
  */
-export async function receivePurchase(id: string, totalPaidThb: number) {
+export async function receivePurchase(id: string, totalPaidSgd: number) {
   return run(async () => {
     await requireAdmin();
-    const paid = z.coerce.number().positive("Enter the THB amount you paid").parse(totalPaidThb);
+    const paid = z.coerce.number().positive("Enter the SGD amount you paid").parse(totalPaidSgd);
 
     await prisma.$transaction(async (tx) => {
       const po = await tx.purchaseOrder.findUniqueOrThrow({
@@ -98,8 +97,8 @@ export async function receivePurchase(id: string, totalPaidThb: number) {
       );
 
       for (const [idx, item] of po.items.entries()) {
-        const { allocatedThb, unitCostThb } = allocation[idx];
-        await tx.purchaseOrderItem.update({ where: { id: item.id }, data: { allocatedThb, unitCostThb } });
+        const { allocatedSgd, unitCostSgd } = allocation[idx];
+        await tx.purchaseOrderItem.update({ where: { id: item.id }, data: { allocatedSgd, unitCostSgd } });
 
         // Read inside the loop: the same product may appear on several lines.
         const p = await tx.product.findUniqueOrThrow({ where: { id: item.productId } });
@@ -107,7 +106,7 @@ export async function receivePurchase(id: string, totalPaidThb: number) {
           where: { id: p.id },
           data: {
             stockQty: p.stockQty + item.qty,
-            avgCostThb: weightedAverage(p.stockQty, Number(p.avgCostThb), item.qty, unitCostThb),
+            avgCostSgd: weightedAverage(p.stockQty, Number(p.avgCostSgd), item.qty, unitCostSgd),
           },
         });
         await tx.stockMovement.create({
@@ -115,7 +114,7 @@ export async function receivePurchase(id: string, totalPaidThb: number) {
             productId: p.id,
             kind: "RECEIVE",
             qty: item.qty,
-            unitCostThb,
+            unitCostSgd,
             refType: "PO",
             refId: po.id,
             note: po.code,
@@ -125,7 +124,7 @@ export async function receivePurchase(id: string, totalPaidThb: number) {
 
       await tx.purchaseOrder.update({
         where: { id },
-        data: { status: "RECEIVED", receivedAt: new Date(), totalPaidThb: paid },
+        data: { status: "RECEIVED", receivedAt: new Date(), totalPaidSgd: paid },
       });
     });
 

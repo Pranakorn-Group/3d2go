@@ -9,8 +9,8 @@ export type ProductDTO = {
   sku: string;
   stockQty: number;
   reservedQty: number;
-  avgCostThb: number;
-  sellPriceThb: number;
+  avgCostSgd: number;
+  sellPriceSgd: number;
   refUrl: string | null;
   note: string | null;
   lowStockAt: number;
@@ -26,8 +26,8 @@ export type PurchaseItemDTO = {
   productId: string;
   qty: number;
   unitPrice: number;
-  allocatedThb: number | null;
-  unitCostThb: number | null;
+  allocatedSgd: number | null;
+  unitCostSgd: number | null;
   product: Pick<ProductDTO, "id" | "brand" | "type" | "color" | "colorHex" | "sku">;
 };
 
@@ -37,7 +37,7 @@ export type PurchaseOrderDTO = {
   supplier: string;
   currency: Currency;
   status: PurchaseStatus;
-  totalPaidThb: number | null;
+  totalPaidSgd: number | null;
   estRate: number | null;
   trackingNo: string | null;
   note: string | null;
@@ -51,7 +51,7 @@ export type SaleItemDTO = {
   productId: string;
   qty: number;
   unitPrice: number;
-  unitCostThb: number | null;
+  unitCostSgd: number | null;
   product: Pick<ProductDTO, "id" | "brand" | "type" | "color" | "colorHex" | "sku">;
 };
 

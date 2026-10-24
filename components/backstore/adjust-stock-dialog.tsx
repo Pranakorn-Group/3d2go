@@ -16,7 +16,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatTHB, rolls } from "@/lib/money";
+import { formatSGD, rolls } from "@/lib/money";
 import type { ProductDTO } from "@/lib/types";
 
 const REASONS = ["Stock count correction", "Damaged / wet", "Own use / sample", "Found extra", "Gift / free roll"];
@@ -55,7 +55,7 @@ export function AdjustStockDialog({
         productId: product.id,
         delta,
         note: detail ? `${reason} — ${detail}` : reason,
-        unitCostThb: delta > 0 && cost !== "" ? Number(cost) : null,
+        unitCostSgd: delta > 0 && cost !== "" ? Number(cost) : null,
       });
       if (!res.ok) return void toast.error(res.error);
       toast.success(`${product.sku}: ${delta > 0 ? "+" : ""}${rolls(delta)}`);
@@ -69,7 +69,7 @@ export function AdjustStockDialog({
         <DialogHeader>
           <DialogTitle>Adjust stock · {product.sku}</DialogTitle>
           <DialogDescription>
-            On hand {product.stockQty} · reserved {product.reservedQty} · avg cost {formatTHB(product.avgCostThb)}
+            On hand {product.stockQty} · reserved {product.reservedQty} · avg cost {formatSGD(product.avgCostSgd)}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit}>
@@ -117,7 +117,7 @@ export function AdjustStockDialog({
             </Field>
             {delta > 0 && (
               <Field>
-                <FieldLabel htmlFor="cost">ต้นทุนต่อม้วน for added rolls (THB)</FieldLabel>
+                <FieldLabel htmlFor="cost">ต้นทุนต่อม้วน for added rolls (SGD)</FieldLabel>
                 <Input
                   id="cost"
                   type="number"
@@ -126,7 +126,7 @@ export function AdjustStockDialog({
                   step="0.01"
                   value={cost}
                   onChange={(e) => setCost(e.target.value)}
-                  placeholder={String(product.avgCostThb)}
+                  placeholder={String(product.avgCostSgd)}
                 />
                 <FieldDescription>Leave empty to keep the current average cost. Use 0 for free rolls.</FieldDescription>
               </Field>

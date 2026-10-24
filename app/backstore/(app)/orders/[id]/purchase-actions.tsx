@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { PackageCheck, Trash2, Truck, XCircle } from "lucide-react";
 import { CostBreakdown } from "@/components/backstore/cost-breakdown";
+import { PaidInput, paidInSgd } from "@/components/backstore/paid-input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,10 +28,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Input } from "@/components/ui/input";
 import { sumValue } from "@/lib/costing";
-import { rolls } from "@/lib/money";
-import type { PurchaseOrderDTO } from "@/lib/types";
+import { DEFAULT_THB_PER_SGD, rolls } from "@/lib/money";
+import type { Currency, PurchaseOrderDTO } from "@/lib/types";
 import { deletePurchase, receivePurchase, setPurchaseStatus } from "../actions";
 
 function Confirm({
@@ -70,8 +71,11 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
   const [pending, startTransition] = useTransition();
   const [receiveOpen, setReceiveOpen] = useState(false);
   const estimate =
-    po.totalPaidThb ?? (po.currency === "THB" ? sumValue(po.items) : po.estRate ? sumValue(po.items) * po.estRate : null);
+    po.totalPaidSgd ?? (po.currency === "SGD" ? sumValue(po.items) : po.estRate ? sumValue(po.items) / po.estRate : null);
   const [paid, setPaid] = useState(estimate !== null ? estimate.toFixed(2) : "");
+  const [paidCurrency, setPaidCurrency] = useState<Currency>("SGD");
+  const [rate, setRate] = useState(String(po.estRate ?? DEFAULT_THB_PER_SGD));
+  const paidSgd = paidInSgd(paid, paidCurrency, rate);
 
   if (po.status === "RECEIVED" || po.status === "CANCELLED") {
     return po.status === "CANCELLED" ? (
@@ -125,8 +129,12 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
         open={receiveOpen}
         onOpenChange={(o) => {
           setReceiveOpen(o);
-          // Pick up the latest saved THB total / estimate each time it opens.
-          if (o) setPaid(estimate !== null ? estimate.toFixed(2) : "");
+          // Pick up the latest saved SGD total / estimate each time it opens.
+          if (o) {
+            setPaid(estimate !== null ? estimate.toFixed(2) : "");
+            setPaidCurrency("SGD");
+            setRate(String(po.estRate ?? DEFAULT_THB_PER_SGD));
+          }
         }}
       >
         <DialogTrigger asChild>
@@ -138,24 +146,40 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
           <DialogHeader>
             <DialogTitle>Receive {po.code}</DialogTitle>
             <DialogDescription>
-              Adds {rolls(po.items.reduce((s, i) => s + i.qty, 0))} to stock. Enter the real total you paid in THB
-              (items + shipping − discount) to lock in ต้นทุนต่อม้วน.
+              Adds {rolls(po.items.reduce((s, i) => s + i.qty, 0))} to stock. Enter the real total you paid in SGD or
+              THB (items + shipping − discount) to lock in ต้นทุนต่อม้วน.
             </DialogDescription>
           </DialogHeader>
           <Field>
-            <FieldLabel htmlFor="paid-thb">Total paid (THB)</FieldLabel>
-            <InputGroup>
-              <InputGroupAddon>฿</InputGroupAddon>
-              <InputGroupInput id="paid-thb" type="number" inputMode="decimal" min="0" step="0.01" value={paid} onChange={(e) => setPaid(e.target.value)} />
-            </InputGroup>
+            <FieldLabel htmlFor="paid-total">Total paid</FieldLabel>
+            <PaidInput
+              id="paid-total"
+              amount={paid}
+              onAmountChange={setPaid}
+              currency={paidCurrency}
+              onCurrencyChange={setPaidCurrency}
+              rate={rate}
+            />
           </Field>
-          <CostBreakdown lines={po.items} currency={po.currency} paidThb={paid !== "" ? Number(paid) : null} />
+          {(paidCurrency === "THB" || po.currency === "THB") && (
+            <Field>
+              <FieldLabel htmlFor="paid-rate">Rate (THB per SGD)</FieldLabel>
+              <Input id="paid-rate" type="number" inputMode="decimal" min="0" step="0.0001" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="e.g. 26.10" />
+            </Field>
+          )}
+          <CostBreakdown
+            lines={po.items}
+            currency={po.currency}
+            paidSgd={paidSgd}
+            thbPerSgd={Number(rate) || null}
+            paidThb={paidCurrency === "THB" && paid !== "" ? Number(paid) : null}
+          />
           <DialogFooter>
             <Button
-              disabled={pending || !(Number(paid) > 0)}
+              disabled={pending || !(paidSgd !== null && paidSgd > 0)}
               onClick={() =>
                 startTransition(async () => {
-                  const res = await receivePurchase(po.id, Number(paid));
+                  const res = await receivePurchase(po.id, paidSgd ?? 0);
                   if (!res.ok) return void toast.error(res.error);
                   toast.success(`${po.code} received — stock updated`);
                   setReceiveOpen(false);

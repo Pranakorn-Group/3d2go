@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/backstore/page-header";
 import { StatusBadge } from "@/components/backstore/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCatalog } from "@/lib/catalog";
+import { getCatalog, getLastPrices } from "@/lib/catalog";
 import { prisma } from "@/lib/db";
 import { purchaseInclude, toProduct, toPurchase } from "@/lib/dto";
 import { formatDate } from "@/lib/money";
@@ -23,6 +23,7 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
     ? (await prisma.product.findMany({ where: { active: true }, orderBy: [{ brand: "asc" }, { type: "asc" }, { color: "asc" }] })).map(toProduct)
     : [];
   const catalog = editable ? await getCatalog() : { brands: [], types: [] };
+  const lastPrices = editable ? await getLastPrices() : {};
 
   return (
     <>
@@ -46,19 +47,19 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
       </PageHeader>
 
       {editable ? (
-        <PurchaseForm key={row.updatedAt.toISOString()} products={products} catalog={catalog} po={po} />
+        <PurchaseForm key={row.updatedAt.toISOString()} products={products} catalog={catalog} lastPrices={lastPrices} po={po} />
       ) : (
         <Card className="max-w-2xl">
           <CardHeader>
             <CardTitle>{po.status === "RECEIVED" ? "Landed cost" : "Items"}</CardTitle>
             <CardDescription>
               {po.status === "RECEIVED"
-                ? "THB paid split across lines by value → ต้นทุนต่อม้วน added to stock."
+                ? "SGD paid split across lines by value → ต้นทุนต่อม้วน added to stock."
                 : "This order was cancelled; no stock was added."}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <CostBreakdown lines={po.items} currency={po.currency} paidThb={po.totalPaidThb} />
+            <CostBreakdown lines={po.items} currency={po.currency} paidSgd={po.totalPaidSgd} thbPerSgd={po.estRate} />
             {po.note && <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-sm">{po.note}</p>}
           </CardContent>
         </Card>

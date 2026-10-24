@@ -2,10 +2,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import toast from "react-hot-toast";
-import { BookmarkPlus, Minus, Plus, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { BookmarkPlus, Minus, PackageCheck, Plus, QrCode, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { createSale } from "@/app/backstore/(app)/sales/actions";
 import { ColorSwatch } from "@/components/backstore/color-swatch";
 import { EmptyState } from "@/components/backstore/empty-state";
+import { PayNowDialog, type PayNowConfig, type PayNowRequest } from "@/components/backstore/paynow-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -13,20 +14,25 @@ import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { round2 } from "@/lib/costing";
-import { formatTHB, rolls } from "@/lib/money";
+import { formatSGD, rolls } from "@/lib/money";
 import { available, type ProductDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Mode = "sell" | "reserve";
 type CartLine = { productId: string; qty: number; unitPrice: string };
+type Group = { key: string; items: ProductDTO[] };
 
-export function PosView({ products }: { products: ProductDTO[] }) {
+const groupKey = (p: ProductDTO) => `${p.brand} ${p.type}`;
+
+export function PosView({ products, paynow }: { products: ProductDTO[]; paynow: PayNowConfig | null }) {
   const [mode, setMode] = useState<Mode>("sell");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [q, setQ] = useState("");
-  const [type, setType] = useState<string | null>(null);
+  const [group, setGroup] = useState<string | null>(null);
+  const [inStockOnly, setInStockOnly] = useState(true);
   const [discount, setDiscount] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -34,20 +40,37 @@ export function PosView({ products }: { products: ProductDTO[] }) {
   const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [qr, setQr] = useState<PayNowRequest | null>(null);
   const [pending, startTransition] = useTransition();
 
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
-  const types = useMemo(() => [...new Set(products.map((p) => p.type))].sort(), [products]);
+  // Products arrive sorted by brand, type, color, so groups keep that order.
+  const groupKeys = useMemo(
+    () => [...new Set(products.filter((p) => !inStockOnly || available(p) > 0).map(groupKey))],
+    [products, inStockOnly],
+  );
   const inCart = (id: string) => cart.find((l) => l.productId === id)?.qty ?? 0;
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return products.filter(
       (p) =>
-        (!type || p.type === type) &&
+        (!group || groupKey(p) === group) &&
+        (!inStockOnly || available(p) > 0) &&
         (!needle || [p.brand, p.type, p.color, p.sku].some((s) => s.toLowerCase().includes(needle))),
     );
-  }, [products, q, type]);
+  }, [products, q, group, inStockOnly]);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, Group>();
+    for (const p of shown) {
+      const key = groupKey(p);
+      let g = map.get(key);
+      if (!g) map.set(key, (g = { key, items: [] }));
+      g.items.push(p);
+    }
+    return [...map.values()];
+  }, [shown]);
 
   const subtotal = round2(cart.reduce((s, l) => s + l.qty * (Number(l.unitPrice) || 0), 0));
   const disc = Math.min(Number(discount) || 0, subtotal);
@@ -59,7 +82,7 @@ export function PosView({ products }: { products: ProductDTO[] }) {
     setCart((c) =>
       c.some((l) => l.productId === p.id)
         ? c.map((l) => (l.productId === p.id ? { ...l, qty: l.qty + 1 } : l))
-        : [...c, { productId: p.id, qty: 1, unitPrice: String(p.sellPriceThb) }],
+        : [...c, { productId: p.id, qty: 1, unitPrice: String(p.sellPriceSgd) }],
     );
   }
 
@@ -92,7 +115,12 @@ export function PosView({ products }: { products: ProductDTO[] }) {
         note,
       });
       if (!res.ok) return void toast.error(res.error);
-      toast.success(mode === "sell" ? `Sold · ${res.data.code} · ${formatTHB(total)}` : `Reserved for ${customerName} · ${res.data.code}`);
+      toast.success(mode === "sell" ? `Sold · ${res.data.code} · ${formatSGD(total)}` : `Reserved for ${customerName} · ${res.data.code}`);
+      // Straight to the PayNow QR for the bill (or the reservation deposit), referenced by the sale code.
+      const due = mode === "sell" ? total : Number(deposit) || 0;
+      if (paynow && due > 0) {
+        setQr({ amount: due, reference: res.data.code, title: mode === "sell" ? `Pay ${res.data.code}` : `Deposit · ${res.data.code}` });
+      }
       reset();
       setSheetOpen(false);
     });
@@ -147,7 +175,7 @@ export function PosView({ products }: { products: ProductDTO[] }) {
                   </div>
                   <span className="text-xs text-muted-foreground">×</span>
                   <InputGroup className="w-28">
-                    <InputGroupAddon>฿</InputGroupAddon>
+                    <InputGroupAddon>S$</InputGroupAddon>
                     <InputGroupInput
                       type="number"
                       inputMode="decimal"
@@ -161,7 +189,7 @@ export function PosView({ products }: { products: ProductDTO[] }) {
                       className="tabular-nums"
                     />
                   </InputGroup>
-                  <span className="ml-auto text-sm font-medium tabular-nums">{formatTHB(l.qty * (Number(l.unitPrice) || 0))}</span>
+                  <span className="ml-auto text-sm font-medium tabular-nums">{formatSGD(l.qty * (Number(l.unitPrice) || 0))}</span>
                 </div>
               </li>
             );
@@ -173,20 +201,20 @@ export function PosView({ products }: { products: ProductDTO[] }) {
       <div className="grid gap-2 text-sm">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Subtotal · {rolls(count)}</span>
-          <span className="tabular-nums">{formatTHB(subtotal)}</span>
+          <span className="tabular-nums">{formatSGD(subtotal)}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
           <label htmlFor="discount" className="text-muted-foreground">
             Discount
           </label>
           <InputGroup className="w-32">
-            <InputGroupAddon>฿</InputGroupAddon>
+            <InputGroupAddon>S$</InputGroupAddon>
             <InputGroupInput id="discount" type="number" inputMode="decimal" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" className="text-right tabular-nums" />
           </InputGroup>
         </div>
         <div className="flex items-baseline justify-between pt-1">
           <span className="font-medium">Total</span>
-          <span className="text-2xl font-semibold tabular-nums text-primary">{formatTHB(total)}</span>
+          <span className="text-2xl font-semibold tabular-nums text-primary">{formatSGD(total)}</span>
         </div>
       </div>
 
@@ -202,7 +230,7 @@ export function PosView({ products }: { products: ProductDTO[] }) {
               <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </Field>
             <Field>
-              <FieldLabel htmlFor="deposit">Deposit (THB)</FieldLabel>
+              <FieldLabel htmlFor="deposit">Deposit (SGD)</FieldLabel>
               <Input id="deposit" type="number" inputMode="decimal" min="0" value={deposit} onChange={(e) => setDeposit(e.target.value)} />
             </Field>
             <Field>
@@ -224,7 +252,7 @@ export function PosView({ products }: { products: ProductDTO[] }) {
           disabled={!cart.length || pending || (mode === "reserve" && !customerName.trim())}
           onClick={checkout}
         >
-          {pending ? "Saving…" : mode === "sell" ? `Charge ${formatTHB(total)}` : "Reserve rolls"}
+          {pending ? "Saving…" : mode === "sell" ? `Charge ${formatSGD(total)}` : "Reserve rolls"}
         </Button>
       </div>
     </div>
@@ -233,17 +261,41 @@ export function PosView({ products }: { products: ProductDTO[] }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_380px] lg:items-start">
       <div className="min-w-0">
-        <h1 className="mb-3 text-2xl font-semibold tracking-tight">POS</h1>
-        <InputGroup className="mb-3">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput placeholder="Search filament…" value={q} onChange={(e) => setQ(e.target.value)} />
-        </InputGroup>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">POS</h1>
+          <Button
+            variant="outline"
+            disabled={!paynow}
+            title={paynow ? "PayNow QR without checking out" : "Set PAYNOW_PROXY in .env to enable PayNow"}
+            onClick={() => setQr({ amount: total > 0 ? total : null, reference: "" })}
+          >
+            <QrCode /> PayNow QR
+          </Button>
+        </div>
+        <div className="mb-3 flex gap-2">
+          <InputGroup>
+            <InputGroupAddon>
+              <Search />
+            </InputGroupAddon>
+            <InputGroupInput placeholder="Search filament…" value={q} onChange={(e) => setQ(e.target.value)} />
+          </InputGroup>
+          <Toggle
+            variant="outline"
+            pressed={inStockOnly}
+            onPressedChange={(on) => {
+              setInStockOnly(on);
+              if (on && group && !products.some((p) => groupKey(p) === group && available(p) > 0)) setGroup(null);
+            }}
+            className="shrink-0 data-[state=on]:border-primary data-[state=on]:text-primary"
+            aria-label="Show only filament in stock"
+          >
+            <PackageCheck /> <span className="hidden sm:inline">In stock only</span>
+          </Toggle>
+        </div>
         <div className="-mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
-          {[null, ...types].map((t) => (
-            <Button key={t ?? "all"} size="sm" variant={type === t ? "default" : "outline"} className="shrink-0 rounded-full" onClick={() => setType(t)}>
-              {t ?? "All"}
+          {[null, ...groupKeys].map((g) => (
+            <Button key={g ?? "all"} size="sm" variant={group === g ? "default" : "outline"} className="shrink-0 rounded-full" onClick={() => setGroup(g)}>
+              {g ?? "All"}
             </Button>
           ))}
         </div>
@@ -251,42 +303,52 @@ export function PosView({ products }: { products: ProductDTO[] }) {
         {shown.length === 0 ? (
           <EmptyState icon={Search} title="No filament found" />
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            {shown.map((p) => {
-              const avail = available(p) - inCart(p.id);
-              const qty = inCart(p.id);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => add(p)}
-                  disabled={avail <= 0}
-                  className={cn(
-                    "relative flex flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-all hover:border-primary/60 hover:shadow-sm active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
-                    qty > 0 && "border-primary ring-1 ring-primary",
-                  )}
-                >
-                  {qty > 0 && (
-                    <span className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                      {qty}
-                    </span>
-                  )}
-                  <span className="h-10 w-10 rounded-full border-4 border-black/5 shadow-inner dark:border-white/10" style={{ backgroundColor: p.colorHex ?? "var(--muted)" }} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{p.color}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {p.brand} {p.type}
-                    </span>
+          <div className="grid gap-5">
+            {groups.map((g) => (
+              <section key={g.key} aria-label={g.key}>
+                <h2 className="mb-2 flex items-baseline gap-2 text-sm font-semibold">
+                  {g.key}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {g.items.length} color{g.items.length === 1 ? "" : "s"}
                   </span>
-                  <span className="mt-auto flex items-end justify-between gap-1">
-                    <span className="font-semibold tabular-nums">{formatTHB(p.sellPriceThb)}</span>
-                    <span className={cn("text-xs tabular-nums", avail <= 0 ? "text-destructive" : "text-muted-foreground")}>
-                      {avail <= 0 ? "None left" : `${avail} left`}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+                </h2>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                  {g.items.map((p) => {
+                    const avail = available(p) - inCart(p.id);
+                    const qty = inCart(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => add(p)}
+                        disabled={avail <= 0}
+                        className={cn(
+                          "relative flex flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-all hover:border-primary/60 hover:shadow-sm active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+                          qty > 0 && "border-primary ring-1 ring-primary",
+                        )}
+                      >
+                        {qty > 0 && (
+                          <span className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                            {qty}
+                          </span>
+                        )}
+                        <span className="h-10 w-10 rounded-full border-4 border-black/5 shadow-inner dark:border-white/10" style={{ backgroundColor: p.colorHex ?? "var(--muted)" }} />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">{p.color}</span>
+                          <span className="block truncate font-mono text-xs text-muted-foreground">{p.sku}</span>
+                        </span>
+                        <span className="mt-auto flex items-end justify-between gap-1">
+                          <span className="font-semibold tabular-nums">{formatSGD(p.sellPriceSgd)}</span>
+                          <span className={cn("text-xs tabular-nums", avail <= 0 ? "text-destructive" : "text-muted-foreground")}>
+                            {avail <= 0 ? "None left" : `${avail} left`}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </div>
@@ -310,7 +372,7 @@ export function PosView({ products }: { products: ProductDTO[] }) {
           <span className="flex items-center gap-2">
             <ShoppingCart /> {rolls(count)}
           </span>
-          <span className="tabular-nums">{formatTHB(total)}</span>
+          <span className="tabular-nums">{formatSGD(total)}</span>
         </Button>
       </div>
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -323,6 +385,7 @@ export function PosView({ products }: { products: ProductDTO[] }) {
         </SheetContent>
       </Sheet>
       <div className="h-16 lg:hidden" aria-hidden />
+      {paynow && <PayNowDialog config={paynow} request={qr} onOpenChange={(o) => !o && setQr(null)} />}
     </div>
   );
 }

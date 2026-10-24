@@ -34,7 +34,7 @@ const saleSchema = z
 
 export type SaleInput = z.input<typeof saleSchema>;
 
-type Row = { avgCostThb: Prisma.Decimal };
+type Row = { avgCostSgd: Prisma.Decimal };
 
 function sumByProduct(items: { productId: string; qty: number }[]) {
   const map = new Map<string, number>();
@@ -66,13 +66,13 @@ export async function createSale(input: SaleInput) {
             ? await tx.$queryRaw<Row[]>`
                 UPDATE "Product" SET "stockQty" = "stockQty" - ${qty}, "updatedAt" = now()
                 WHERE id = ${productId} AND active AND "stockQty" - "reservedQty" >= ${qty}
-                RETURNING "avgCostThb"`
+                RETURNING "avgCostSgd"`
             : await tx.$queryRaw<Row[]>`
                 UPDATE "Product" SET "reservedQty" = "reservedQty" + ${qty}, "updatedAt" = now()
                 WHERE id = ${productId} AND active AND "stockQty" - "reservedQty" >= ${qty}
-                RETURNING "avgCostThb"`;
+                RETURNING "avgCostSgd"`;
         if (rows.length === 0) await notEnough(tx, productId);
-        costs.set(productId, Number(rows[0].avgCostThb));
+        costs.set(productId, Number(rows[0].avgCostSgd));
       }
 
       const sell = s.mode === "sell";
@@ -95,7 +95,7 @@ export async function createSale(input: SaleInput) {
               productId: i.productId,
               qty: i.qty,
               unitPrice: i.unitPrice,
-              unitCostThb: sell ? costs.get(i.productId) : null,
+              unitCostSgd: sell ? costs.get(i.productId) : null,
             })),
           },
         },
@@ -107,7 +107,7 @@ export async function createSale(input: SaleInput) {
             productId: i.productId,
             kind: "SALE" as const,
             qty: -i.qty,
-            unitCostThb: costs.get(i.productId),
+            unitCostSgd: costs.get(i.productId),
             refType: "SALE",
             refId: created.id,
             note: created.code,
@@ -136,20 +136,20 @@ export async function completeReservation(id: string) {
           UPDATE "Product"
           SET "stockQty" = "stockQty" - ${qty}, "reservedQty" = "reservedQty" - ${qty}, "updatedAt" = now()
           WHERE id = ${productId} AND "stockQty" >= ${qty} AND "reservedQty" >= ${qty}
-          RETURNING "avgCostThb"`;
+          RETURNING "avgCostSgd"`;
         if (rows.length === 0) await notEnough(tx, productId);
-        costs.set(productId, Number(rows[0].avgCostThb));
+        costs.set(productId, Number(rows[0].avgCostSgd));
       }
 
       for (const item of sale.items) {
-        await tx.saleItem.update({ where: { id: item.id }, data: { unitCostThb: costs.get(item.productId) } });
+        await tx.saleItem.update({ where: { id: item.id }, data: { unitCostSgd: costs.get(item.productId) } });
       }
       await tx.stockMovement.createMany({
         data: sale.items.map((i) => ({
           productId: i.productId,
           kind: "SALE" as const,
           qty: -i.qty,
-          unitCostThb: costs.get(i.productId),
+          unitCostSgd: costs.get(i.productId),
           refType: "SALE",
           refId: sale.id,
           note: sale.code,
@@ -186,12 +186,12 @@ export async function cancelSale(id: string) {
       } else {
         for (const item of sale.items) {
           const p = await tx.product.findUniqueOrThrow({ where: { id: item.productId } });
-          const cost = item.unitCostThb === null ? Number(p.avgCostThb) : Number(item.unitCostThb);
+          const cost = item.unitCostSgd === null ? Number(p.avgCostSgd) : Number(item.unitCostSgd);
           await tx.product.update({
             where: { id: p.id },
             data: {
               stockQty: p.stockQty + item.qty,
-              avgCostThb: weightedAverage(p.stockQty, Number(p.avgCostThb), item.qty, cost),
+              avgCostSgd: weightedAverage(p.stockQty, Number(p.avgCostSgd), item.qty, cost),
             },
           });
           await tx.stockMovement.create({
@@ -199,7 +199,7 @@ export async function cancelSale(id: string) {
               productId: p.id,
               kind: "ADJUST",
               qty: item.qty,
-              unitCostThb: cost,
+              unitCostSgd: cost,
               refType: "SALE",
               refId: sale.id,
               note: `Void ${sale.code}`,

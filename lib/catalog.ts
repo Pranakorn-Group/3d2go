@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import type { LastPrices } from "@/lib/last-price";
 
 export type Catalog = { brands: string[]; types: string[] };
 
@@ -10,4 +11,19 @@ export async function getCatalog(): Promise<Catalog> {
     prisma.filamentType.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
   ]);
   return { brands: brands.map((b) => b.name), types: types.map((t) => t.name) };
+}
+
+/** Last price paid per roll for every product, per order currency (cancelled orders skipped). */
+export async function getLastPrices(): Promise<LastPrices> {
+  const items = await prisma.purchaseOrderItem.findMany({
+    where: { po: { status: { not: "CANCELLED" } } },
+    select: { productId: true, unitPrice: true, po: { select: { code: true, currency: true } } },
+    orderBy: [{ po: { orderedAt: "desc" } }, { po: { createdAt: "desc" } }],
+  });
+  const last: LastPrices = {};
+  for (const i of items) {
+    const entry = (last[i.productId] ??= {});
+    entry[i.po.currency] ??= { price: Number(i.unitPrice), code: i.po.code };
+  }
+  return last;
 }

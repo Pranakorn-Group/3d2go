@@ -21,9 +21,9 @@ import { Input } from "@/components/ui/input";
 import { type BulkColor, buildBulkRows, parsePastedColors } from "@/lib/bulk";
 import { cn } from "@/lib/utils";
 
-type Shared = { sellPriceThb: string; openingQty: string; openingCostThb: string; note: string };
+type Shared = { sellPriceSgd: string; openingQty: string; openingCostSgd: string; note: string };
 
-const EMPTY_SHARED: Shared = { sellPriceThb: "", openingQty: "0", openingCostThb: "", note: "" };
+const EMPTY_SHARED: Shared = { sellPriceSgd: "", openingQty: "0", openingCostSgd: "", note: "" };
 const blank = (): BulkColor => ({ color: "", colorHex: null });
 
 export function BulkAddDialog({
@@ -50,7 +50,7 @@ export function BulkAddDialog({
   const skuByLine = new Map(parsed.rows.map((r) => [r.line, r.sku]));
   const errorByLine = new Map(parsed.errors.map((e) => [e.line, e.message]));
   const count = parsed.rows.length;
-  const ready = !!brand && !!type && shared.sellPriceThb !== "" && count > 0 && parsed.errors.length === 0;
+  const ready = !!brand && !!type && shared.sellPriceSgd !== "" && count > 0 && parsed.errors.length === 0;
 
   function onOpenChange(o: boolean) {
     setOpen(o);
@@ -108,7 +108,7 @@ export function BulkAddDialog({
         type,
         colors,
         ...shared,
-        openingCostThb: shared.openingCostThb || 0,
+        openingCostSgd: shared.openingCostSgd || 0,
         lowStockAt,
         refUrl,
       });
@@ -145,15 +145,15 @@ export function BulkAddDialog({
               <FieldLegend variant="label">Apply to all</FieldLegend>
               <div className="grid grid-cols-3 gap-3">
                 <Field>
-                  <FieldLabel htmlFor="bulk-price">Price (฿)</FieldLabel>
+                  <FieldLabel htmlFor="bulk-price">Price (S$)</FieldLabel>
                   <Input
                     id="bulk-price"
                     type="number"
                     inputMode="decimal"
                     min="0"
                     step="0.01"
-                    value={shared.sellPriceThb}
-                    onChange={setShare("sellPriceThb")}
+                    value={shared.sellPriceSgd}
+                    onChange={setShare("sellPriceSgd")}
                     placeholder="690"
                     required
                   />
@@ -171,15 +171,15 @@ export function BulkAddDialog({
                   />
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="bulk-cost">Cost / roll (฿)</FieldLabel>
+                  <FieldLabel htmlFor="bulk-cost">Cost / roll (S$)</FieldLabel>
                   <Input
                     id="bulk-cost"
                     type="number"
                     inputMode="decimal"
                     min="0"
                     step="0.01"
-                    value={shared.openingCostThb}
-                    onChange={setShare("openingCostThb")}
+                    value={shared.openingCostSgd}
+                    onChange={setShare("openingCostSgd")}
                     placeholder="520"
                   />
                 </Field>

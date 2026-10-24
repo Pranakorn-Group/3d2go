@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/db";
 import { toProduct } from "@/lib/dto";
-import { formatDate, formatDateTime, formatMoney, formatTHB } from "@/lib/money";
+import { formatDate, formatDateTime, formatMoney, formatSGD } from "@/lib/money";
 import { available } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -32,9 +32,9 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
     { label: "On hand", value: p.stockQty },
     { label: "Reserved", value: p.reservedQty },
     { label: "Available", value: available(p) },
-    { label: "Avg cost", value: formatTHB(p.avgCostThb) },
-    { label: "Price", value: formatTHB(p.sellPriceThb) },
-    { label: "Stock value", value: formatTHB(p.stockQty * p.avgCostThb) },
+    { label: "Avg cost", value: formatSGD(p.avgCostSgd) },
+    { label: "Price", value: formatSGD(p.sellPriceSgd) },
+    { label: "Stock value", value: formatSGD(p.stockQty * p.avgCostSgd) },
   ];
 
   return (
@@ -104,7 +104,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                       {m.qty > 0 ? `+${m.qty}` : m.qty}
                     </TableCell>
                     <TableCell className="pr-6 text-right tabular-nums">
-                      {m.unitCostThb === null ? "—" : formatTHB(Number(m.unitCostThb))}
+                      {m.unitCostSgd === null ? "—" : formatSGD(Number(m.unitCostSgd))}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -148,7 +148,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                     <TableCell className="text-right tabular-nums">{i.qty}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(Number(i.unitPrice), i.po.currency)}</TableCell>
                     <TableCell className="pr-6 text-right font-medium tabular-nums">
-                      {i.unitCostThb === null ? "—" : formatTHB(Number(i.unitCostThb))}
+                      {i.unitCostSgd === null ? "—" : formatSGD(Number(i.unitCostSgd))}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -1,7 +1,7 @@
-// Landed-cost maths. Everything is computed in satang (integer cents) to avoid float drift.
+// Landed-cost maths. Everything is computed in integer cents to avoid float drift.
 
 export type CostLine = { qty: number; unitPrice: number };
-export type AllocatedLine = { allocatedThb: number; unitCostThb: number };
+export type AllocatedLine = { allocatedSgd: number; unitCostSgd: number };
 
 const toCents = (n: number) => Math.round(n * 100);
 const fromCents = (c: number) => c / 100;
@@ -16,14 +16,14 @@ export function sumValue(lines: CostLine[]) {
 }
 
 /**
- * Split the THB actually paid for an order across its lines, proportional to each line's value
+ * Split the SGD actually paid for an order across its lines, proportional to each line's value
  * in the order currency. Shipping, discounts and FX differences end up spread by value.
- * The last line absorbs any rounding remainder so the allocations always sum to totalPaidThb.
- * Returns ต้นทุนต่อม้วน (unitCostThb) for each line.
+ * The last line absorbs any rounding remainder so the allocations always sum to totalPaidSgd.
+ * Returns ต้นทุนต่อม้วน (unitCostSgd) for each line.
  */
-export function allocatePO(lines: CostLine[], totalPaidThb: number): AllocatedLine[] {
+export function allocatePO(lines: CostLine[], totalPaidSgd: number): AllocatedLine[] {
   if (lines.length === 0) return [];
-  const totalCents = toCents(totalPaidThb);
+  const totalCents = toCents(totalPaidSgd);
   const total = sumValue(lines);
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
@@ -40,16 +40,16 @@ export function allocatePO(lines: CostLine[], totalPaidThb: number): AllocatedLi
     }
     used += cents;
     return {
-      allocatedThb: fromCents(cents),
-      unitCostThb: line.qty > 0 ? fromCents(Math.round(cents / line.qty)) : 0,
+      allocatedSgd: fromCents(cents),
+      unitCostSgd: line.qty > 0 ? fromCents(Math.round(cents / line.qty)) : 0,
     };
   });
 }
 
-/** Effective THB per 1 unit of order currency (SGD→THB rate implied by what was paid). */
-export function effectiveRate(lines: CostLine[], totalPaidThb: number) {
+/** Effective SGD per 1 unit of order currency (the FX rate implied by what was paid). */
+export function effectiveRate(lines: CostLine[], totalPaidSgd: number) {
   const total = sumValue(lines);
-  return total > 0 ? totalPaidThb / total : 0;
+  return total > 0 ? totalPaidSgd / total : 0;
 }
 
 /** New weighted-average cost after receiving `qty` rolls at `unitCost`. */
@@ -57,4 +57,9 @@ export function weightedAverage(stockQty: number, avgCost: number, qty: number, 
   const onHand = Math.max(stockQty, 0);
   if (onHand + qty <= 0) return round2(unitCost);
   return round2((onHand * avgCost + qty * unitCost) / (onHand + qty));
+}
+
+/** Converts a THB amount to SGD with a THB-per-SGD rate (e.g. 25.8). Null when the rate is missing. */
+export function thbToSgd(thb: number, thbPerSgd: number | null | undefined) {
+  return thbPerSgd && thbPerSgd > 0 ? round2(thb / thbPerSgd) : null;
 }

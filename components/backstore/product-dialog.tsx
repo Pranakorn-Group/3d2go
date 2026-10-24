@@ -29,12 +29,12 @@ type Form = {
   color: string;
   colorHex: string;
   sku: string;
-  sellPriceThb: string;
+  sellPriceSgd: string;
   lowStockAt: string;
   refUrl: string;
   note: string;
   openingQty: string;
-  openingCostThb: string;
+  openingCostSgd: string;
 };
 
 function initial(p?: ProductDTO): Form {
@@ -44,12 +44,12 @@ function initial(p?: ProductDTO): Form {
     color: p?.color ?? "",
     colorHex: p?.colorHex ?? "",
     sku: p?.sku ?? "",
-    sellPriceThb: p ? String(p.sellPriceThb) : "",
+    sellPriceSgd: p ? String(p.sellPriceSgd) : "",
     lowStockAt: String(p?.lowStockAt ?? 2),
     refUrl: p?.refUrl ?? "",
     note: p?.note ?? "",
     openingQty: "0",
-    openingCostThb: "",
+    openingCostSgd: "",
   };
 }
 
@@ -102,7 +102,7 @@ export function ProductDialog({
         id: product?.id,
         ...form,
         colorHex: form.colorHex || null,
-        openingCostThb: form.openingCostThb || 0,
+        openingCostSgd: form.openingCostSgd || 0,
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -172,15 +172,15 @@ export function ProductDialog({
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field>
-                  <FieldLabel htmlFor="price">Selling price (THB)</FieldLabel>
+                  <FieldLabel htmlFor="price">Selling price (SGD)</FieldLabel>
                   <Input
                     id="price"
                     type="number"
                     inputMode="decimal"
                     min="0"
                     step="0.01"
-                    value={form.sellPriceThb}
-                    onChange={set("sellPriceThb")}
+                    value={form.sellPriceSgd}
+                    onChange={set("sellPriceSgd")}
                     required
                   />
                 </Field>
@@ -207,15 +207,15 @@ export function ProductDialog({
                       <Input id="oq" type="number" inputMode="numeric" min="0" value={form.openingQty} onChange={set("openingQty")} />
                     </Field>
                     <Field>
-                      <FieldLabel htmlFor="oc">ต้นทุนต่อม้วน (THB)</FieldLabel>
+                      <FieldLabel htmlFor="oc">ต้นทุนต่อม้วน (SGD)</FieldLabel>
                       <Input
                         id="oc"
                         type="number"
                         inputMode="decimal"
                         min="0"
                         step="0.01"
-                        value={form.openingCostThb}
-                        onChange={set("openingCostThb")}
+                        value={form.openingCostSgd}
+                        onChange={set("openingCostSgd")}
                       />
                     </Field>
                   </div>

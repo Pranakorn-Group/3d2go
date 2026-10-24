@@ -10,5 +10,7 @@ export default async function PosPage() {
     where: { active: true },
     orderBy: [{ brand: "asc" }, { type: "asc" }, { color: "asc" }],
   });
-  return <PosView products={products.map(toProduct)} />;
+  const proxy = process.env.PAYNOW_PROXY?.trim();
+  const paynow = proxy ? { proxy, name: process.env.PAYNOW_NAME?.trim() || "NA" } : null;
+  return <PosView products={products.map(toProduct)} paynow={paynow} />;
 }
