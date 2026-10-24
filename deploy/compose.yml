@@ -25,6 +25,10 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.3d2go.rule=Host(`3d2go.meao.dev`)"
+      # Explicit, like the other hmpr02 apps: seluna-storefront's `seluna-legacy` router is a
+      # HostRegexp(`.+`) catch-all at priority 1. If this router is missing (container down, not on
+      # `proxy`, stack not deployed), requests fall through to it and 307 to https://seluna.cloud/.
+      - "traefik.http.routers.3d2go.priority=100"
       - "traefik.http.routers.3d2go.entrypoints=websecure"
       - "traefik.http.routers.3d2go.tls=true"
       - "traefik.http.routers.3d2go.tls.certresolver=letsencrypt"
