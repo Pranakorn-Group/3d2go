@@ -101,7 +101,7 @@ export function StockView({
   const [brand, setBrand] = useState(ALL);
   const [type, setType] = useState(ALL);
   const [view, setView] = useState<View>("active");
-  // Hides SKUs with no rolls on hand; ignored on the "Out of stock" view.
+  // Hides SKUs with no rolls on hand unless some are shipping; ignored on the "Out of stock" view.
   const [inStockOnly, setInStockOnly] = useState(true);
   const [editing, setEditing] = useState<ProductDTO | null>(null);
   const [adjusting, setAdjusting] = useState<ProductDTO | null>(null);
@@ -118,13 +118,13 @@ export function StockView({
       if (view === "archived" ? p.active : !p.active) return false;
       if (view === "low" && !(available(p) <= p.lowStockAt)) return false;
       if (view === "out" && p.stockQty > 0) return false;
-      if (view !== "out" && inStockOnly && p.stockQty <= 0) return false;
+      if (view !== "out" && inStockOnly && p.stockQty <= 0 && !incoming[p.id]) return false;
       if (brand !== ALL && p.brand !== brand) return false;
       if (type !== ALL && p.type !== type) return false;
       if (!needle) return true;
       return [p.brand, p.type, p.color, p.sku, p.note ?? ""].some((s) => s.toLowerCase().includes(needle));
     });
-  }, [products, q, brand, type, view, inStockOnly]);
+  }, [products, q, brand, type, view, inStockOnly, incoming]);
 
   const totals = useMemo(
     () => ({

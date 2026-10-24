@@ -7,10 +7,14 @@
 #   PAYNOW_PROXY     - optional, PayNow mobile (+65…) or UEN; enables the PayNow QR in the POS
 #   PAYNOW_NAME      - optional, name shown on the QR
 #   IMAGE_TAG        - optional, defaults to latest
-#   APP_PORT         - optional host port, defaults to 3000
+#
+# Served by the shared Traefik on hmpr02 (infrastructure repo: compose/services/traefik.yml), which runs
+# on the host network and reaches containers over the external `proxy` network. No host port is published.
+# DNS for 3d2go.meao.dev must point at hmpr02; the cert comes from the `letsencrypt` (HTTP-01) resolver.
 services:
   app:
     image: ghcr.io/pranakorn-group/3d2go:${IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
@@ -18,5 +22,17 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
       PAYNOW_PROXY: ${PAYNOW_PROXY:-}
       PAYNOW_NAME: ${PAYNOW_NAME:-}
-    ports:
-      - "${APP_PORT:-3000}:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.3d2go.rule=Host(`3d2go.meao.dev`)"
+      - "traefik.http.routers.3d2go.entrypoints=websecure"
+      - "traefik.http.routers.3d2go.tls=true"
+      - "traefik.http.routers.3d2go.tls.certresolver=letsencrypt"
+      - "traefik.http.services.3d2go.loadbalancer.server.port=3000"
+      - "traefik.docker.network=proxy"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
