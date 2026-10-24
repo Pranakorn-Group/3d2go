@@ -41,8 +41,8 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Toggle } from "@/components/ui/toggle";
-import type { Catalog } from "@/lib/catalog";
-import { formatSGD, rolls } from "@/lib/money";
+import type { Catalog, Incoming } from "@/lib/catalog";
+import { formatDayMonth, formatSGD, rolls } from "@/lib/money";
 import { formatPct, summarizeStock, unitProfit } from "@/lib/profit";
 import { available, type ProductDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -52,13 +52,18 @@ type View = "active" | "low" | "out" | "archived";
 const VIEW_LABEL: Record<View, string> = { active: "Active", low: "Low stock", out: "Out of stock", archived: "Archived" };
 const ALL = "__all";
 
-function StockLevel({ p }: { p: ProductDTO }) {
+function StockLevel({ p, incoming }: { p: ProductDTO; incoming?: Incoming }) {
   const avail = available(p);
   const tone = p.stockQty === 0 ? "text-destructive" : avail <= p.lowStockAt ? "text-amber-600 dark:text-amber-400" : "";
   return (
     <div className="tabular-nums">
       <span className={cn("font-semibold", tone)}>{p.stockQty}</span>
       {p.reservedQty > 0 && <span className="ml-1 text-xs text-primary">({p.reservedQty} held)</span>}
+      {incoming && (
+        <div className="text-xs whitespace-nowrap text-sky-600 dark:text-sky-400">
+          +{incoming.qty} shipping{incoming.eta && ` · ~${formatDayMonth(incoming.eta)}`}
+        </div>
+      )}
     </div>
   );
 }
@@ -82,7 +87,16 @@ function priceRange(items: ProductDTO[]) {
 
 type Group = { key: string; brand: string; type: string; items: ProductDTO[]; rolls: number };
 
-export function StockView({ products, catalog }: { products: ProductDTO[]; catalog: Catalog }) {
+export function StockView({
+  products,
+  catalog,
+  incoming,
+}: {
+  products: ProductDTO[];
+  catalog: Catalog;
+  /** Rolls on open purchase orders, per product id. */
+  incoming: Record<string, Incoming>;
+}) {
   const [q, setQ] = useState("");
   const [brand, setBrand] = useState(ALL);
   const [type, setType] = useState(ALL);
@@ -115,9 +129,10 @@ export function StockView({ products, catalog }: { products: ProductDTO[]; catal
   const totals = useMemo(
     () => ({
       rolls: rows.reduce((s, p) => s + p.stockQty, 0),
+      incoming: rows.reduce((s, p) => s + (incoming[p.id]?.qty ?? 0), 0),
       value: rows.reduce((s, p) => s + p.stockQty * p.avgCostSgd, 0),
     }),
-    [rows],
+    [rows, incoming],
   );
 
   // One card per brand + type; rows arrive sorted by brand, type, color.
@@ -181,7 +196,7 @@ export function StockView({ products, catalog }: { products: ProductDTO[]; catal
     <>
       <PageHeader
         title="Stock"
-        description={`${rows.length} SKUs · ${rolls(totals.rolls)} · ${formatSGD(totals.value)} at cost`}
+        description={`${rows.length} SKUs · ${rolls(totals.rolls)}${totals.incoming ? ` (+${totals.incoming} shipping)` : ""} · ${formatSGD(totals.value)} at cost`}
       >
         <Button asChild variant="outline">
           <Link href="/backstore/stock/catalog">
@@ -348,7 +363,7 @@ export function StockView({ products, catalog }: { products: ProductDTO[]; catal
                                 </TableCell>
                                 <TableCell className="font-mono text-xs">{p.sku}</TableCell>
                                 <TableCell className="text-right">
-                                  <StockLevel p={p} />
+                                  <StockLevel p={p} incoming={incoming[p.id]} />
                                 </TableCell>
                                 <TableCell className="text-right tabular-nums">{formatSGD(p.avgCostSgd)}</TableCell>
                                 <TableCell className="text-right tabular-nums">{formatSGD(p.sellPriceSgd)}</TableCell>
@@ -392,7 +407,7 @@ export function StockView({ products, catalog }: { products: ProductDTO[]; catal
                             </div>
                           </Link>
                           <div className="text-right text-sm">
-                            <StockLevel p={p} />
+                            <StockLevel p={p} incoming={incoming[p.id]} />
                             <div className="text-xs text-muted-foreground tabular-nums">
                               {formatSGD(p.sellPriceSgd)} · <EstProfit p={p} />
                             </div>

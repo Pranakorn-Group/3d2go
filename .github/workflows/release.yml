@@ -72,6 +72,9 @@ jobs:
           KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
           KOMODO_STACK: ${{ vars.KOMODO_STACK || '3d2go' }}
         run: |
+          for v in KOMODO_URL KOMODO_API_KEY KOMODO_API_SECRET; do
+            [ -n "${!v}" ] || { echo "::error::Secret $v is not set (Settings → Environments → production)"; exit 1; }
+          done
           curl --fail-with-body -sS -X POST "${KOMODO_URL%/}/execute" \
             -H "Content-Type: application/json" \
             -H "X-Api-Key: ${KOMODO_API_KEY}" \

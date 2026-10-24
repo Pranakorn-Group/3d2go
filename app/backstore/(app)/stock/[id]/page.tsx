@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { getIncoming } from "@/lib/catalog";
 import { prisma } from "@/lib/db";
 import { toProduct } from "@/lib/dto";
-import { formatDate, formatDateTime, formatMoney, formatSGD } from "@/lib/money";
+import { formatDate, formatDateTime, formatDayMonth, formatMoney, formatSGD } from "@/lib/money";
 import { available } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -27,11 +28,16 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   });
   if (!row) notFound();
   const p = toProduct(row);
+  const incoming = (await getIncoming())[p.id];
 
   const stats = [
     { label: "On hand", value: p.stockQty },
     { label: "Reserved", value: p.reservedQty },
     { label: "Available", value: available(p) },
+    {
+      label: incoming?.eta ? `Shipping · ~${formatDayMonth(incoming.eta)}` : "Shipping",
+      value: incoming?.qty ?? 0,
+    },
     { label: "Avg cost", value: formatSGD(p.avgCostSgd) },
     { label: "Price", value: formatSGD(p.sellPriceSgd) },
     { label: "Stock value", value: formatSGD(p.stockQty * p.avgCostSgd) },
@@ -61,7 +67,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
       />
       {p.note && <p className="-mt-2 mb-4 rounded-lg bg-muted px-3 py-2 text-sm">{p.note}</p>}
 
-      <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
         {stats.map((s) => (
           <Card key={s.label} className="gap-0 px-4 py-3">
             <div className="text-xs text-muted-foreground">{s.label}</div>

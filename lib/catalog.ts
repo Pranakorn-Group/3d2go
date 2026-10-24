@@ -40,20 +40,32 @@ export async function getLeadTimes(): Promise<LeadTimes> {
   return leadTimes(rows.map((r) => ({ ...r, receivedAt: r.receivedAt! })));
 }
 
-/** Earliest estimated arrival (ISO) per product across open orders, for "back in stock" hints. */
-export async function getRestockEtas(): Promise<Record<string, string>> {
+export type Incoming = { qty: number; eta: string | null };
+
+/** Rolls on open (placed / shipped) orders per product, with the earliest estimated arrival (ISO). */
+export async function getIncoming(): Promise<Record<string, Incoming>> {
   const [lead, open] = await Promise.all([
     getLeadTimes(),
     prisma.purchaseOrder.findMany({
       where: { status: { in: ["PLACED", "SHIPPED"] } },
-      select: { supplier: true, orderedAt: true, items: { select: { productId: true } } },
+      select: { supplier: true, orderedAt: true, items: { select: { productId: true, qty: true } } },
     }),
   ]);
-  const etas: Record<string, string> = {};
+  const incoming: Record<string, Incoming> = {};
   for (const po of open) {
-    const eta = estimateArrival(po, lead)?.toISOString();
-    if (!eta) continue;
-    for (const { productId } of po.items) if (!etas[productId] || eta < etas[productId]) etas[productId] = eta;
+    const eta = estimateArrival(po, lead)?.toISOString() ?? null;
+    for (const { productId, qty } of po.items) {
+      const cur = (incoming[productId] ??= { qty: 0, eta: null });
+      cur.qty += qty;
+      if (eta && (!cur.eta || eta < cur.eta)) cur.eta = eta;
+    }
   }
+  return incoming;
+}
+
+/** Earliest estimated arrival (ISO) per product across open orders, for "back in stock" hints. */
+export async function getRestockEtas(): Promise<Record<string, string>> {
+  const etas: Record<string, string> = {};
+  for (const [id, { eta }] of Object.entries(await getIncoming())) if (eta) etas[id] = eta;
   return etas;
 }
