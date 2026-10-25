@@ -86,7 +86,15 @@ function priceRange(items: ProductDTO[]) {
   return lo === hi ? formatSGD(lo) : `${formatSGD(lo)} – ${formatSGD(hi)}`;
 }
 
-type Group = { key: string; brand: string; type: string; items: ProductDTO[]; rolls: number };
+type Group = {
+  key: string;
+  brand: string;
+  type: string;
+  items: ProductDTO[];
+  rolls: number;
+  /** Rolls on open purchase orders across every color, with the earliest ETA. */
+  incoming: Incoming;
+};
 
 export function StockView({
   products,
@@ -142,12 +150,17 @@ export function StockView({
     for (const p of rows) {
       const key = `${p.brand}\u0000${p.type}`;
       let g = map.get(key);
-      if (!g) map.set(key, (g = { key, brand: p.brand, type: p.type, items: [], rolls: 0 }));
+      if (!g) map.set(key, (g = { key, brand: p.brand, type: p.type, items: [], rolls: 0, incoming: { qty: 0, eta: null } }));
       g.items.push(p);
       g.rolls += p.stockQty;
+      const inc = incoming[p.id];
+      if (inc) {
+        g.incoming.qty += inc.qty;
+        if (inc.eta && (!g.incoming.eta || inc.eta < g.incoming.eta)) g.incoming.eta = inc.eta;
+      }
     }
     return [...map.values()];
-  }, [rows]);
+  }, [rows, incoming]);
 
   function toggleGroup(key: string) {
     setCollapsed((s) => {
@@ -320,7 +333,14 @@ export function StockView({
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground tabular-nums">
-                        {g.items.length} color{g.items.length === 1 ? "" : "s"} · {rolls(g.rolls)} · {priceRange(g.items)}
+                        {g.items.length} color{g.items.length === 1 ? "" : "s"} · {rolls(g.rolls)}
+                        {g.incoming.qty > 0 && (
+                          <span className="text-sky-600 dark:text-sky-400">
+                            {" "}
+                            (+{g.incoming.qty} shipping{g.incoming.eta && ` · ~${formatDayMonth(g.incoming.eta)}`})
+                          </span>
+                        )}{" "}
+                        · {priceRange(g.items)}
                       </div>
                       <div className="text-xs text-muted-foreground tabular-nums">
                         {formatSGD(sum.cost)} at cost · est. profit{" "}

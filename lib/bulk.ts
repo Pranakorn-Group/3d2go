@@ -1,4 +1,4 @@
-import { makeSku } from "./sku";
+import { makeSku, uniqueSku } from "./sku";
 
 // Bulk add: one row = one color. Brand, type, price, qty, cost and note are shared by every row.
 
@@ -24,11 +24,20 @@ export function parsePastedColors(text: string): BulkColor[] {
     .map((f) => ({ color: f[0], colorHex: normalizeHex(f[1]) }));
 }
 
-/** Validates the color rows and generates SKUs. Blank rows are skipped; `line` is the 1-based row number. */
-export function buildBulkRows(colors: BulkColor[], brand: string, type: string): BulkParse {
+/**
+ * Validates the color rows and generates SKUs. Blank rows are skipped; `line` is the 1-based row number.
+ * A generated SKU that is already in the system (`taken`) or used by an earlier row gets a "-2", "-3", … suffix.
+ */
+export function buildBulkRows(
+  colors: BulkColor[],
+  brand: string,
+  type: string,
+  taken: Iterable<string> = [],
+): BulkParse {
   const rows: BulkRow[] = [];
   const errors: BulkParse["errors"] = [];
-  const skus = new Set<string>();
+  const skus = new Set(taken);
+  const names = new Set<string>();
 
   colors.forEach((c, i) => {
     const line = i + 1;
@@ -41,8 +50,11 @@ export function buildBulkRows(colors: BulkColor[], brand: string, type: string):
     const colorHex = normalizeHex(hex);
     if (hex && !colorHex) return void errors.push({ line, message: `"${hex}" isn't a hex color like #00BCD4` });
 
-    const sku = makeSku(brand, type, color);
-    if (skus.has(sku)) return void errors.push({ line, message: `SKU ${sku} is already used by an earlier row` });
+    const name = color.toLowerCase();
+    if (names.has(name)) return void errors.push({ line, message: `"${color}" is already in an earlier row` });
+    names.add(name);
+
+    const sku = uniqueSku(makeSku(brand, type, color), skus);
     skus.add(sku);
 
     rows.push({ line, color, colorHex, sku });

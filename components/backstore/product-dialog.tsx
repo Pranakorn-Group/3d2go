@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { Tags, Wand2 } from "lucide-react";
-import { saveProduct } from "@/app/backstore/(app)/stock/actions";
+import { saveProduct, skusStartingWith } from "@/app/backstore/(app)/stock/actions";
 import { CatalogSelect } from "@/components/backstore/catalog-select";
 import { ColorPicker } from "@/components/backstore/color-picker";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { makeSku } from "@/lib/sku";
+import { makeSku, uniqueSku } from "@/lib/sku";
 import type { ProductDTO } from "@/lib/types";
 
 type Form = {
@@ -76,6 +76,7 @@ export function ProductDialog({
   const [prevOpen, setPrevOpen] = useState(open);
   const [form, setForm] = useState<Form>(() => initial(product));
   const [pending, startTransition] = useTransition();
+  const [generating, startGenerating] = useTransition();
   const isNew = !product;
 
   // Reset the form every time the dialog opens (also when opened from outside).
@@ -90,8 +91,15 @@ export function ProductDialog({
   const pick = (k: "brand" | "type" | "colorHex") => (v: string) => setForm((f) => ({ ...f, [k]: v }));
   const missingCatalog = isNew && (!brands.length || !types.length);
 
+  // Skips SKUs already in the system (this product's own SKU doesn't count).
   function autoSku() {
-    setForm((f) => ({ ...f, sku: makeSku(f.brand, f.type, f.color) }));
+    const base = makeSku(form.brand, form.type, form.color);
+    startGenerating(async () => {
+      const res = await skusStartingWith(base);
+      if (!res.ok) return void toast.error(res.error);
+      const taken = new Set(res.data.filter((s) => s !== product?.sku));
+      setForm((f) => ({ ...f, sku: uniqueSku(base, taken) }));
+    });
   }
 
   function submit(e: React.FormEvent) {
@@ -165,7 +173,13 @@ export function ProductDialog({
                 <FieldLabel htmlFor="sku">SKU</FieldLabel>
                 <div className="flex gap-1.5">
                   <Input id="sku" value={form.sku} onChange={set("sku")} className="font-mono uppercase" required />
-                  <Button type="button" variant="outline" onClick={autoSku} title="Generate from brand / type / color">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={autoSku}
+                    disabled={generating}
+                    title="Generate from brand / type / color"
+                  >
                     <Wand2 /> Auto
                   </Button>
                 </div>

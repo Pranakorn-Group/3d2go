@@ -34,8 +34,23 @@ describe("buildBulkRows", () => {
     expect(errors).toEqual([
       { line: 1, message: `"blue" isn't a hex color like #00BCD4` },
       { line: 2, message: "Color name is required" },
-      { line: 4, message: "SKU BAMB-PLA-WHITE is already used by an earlier row" },
+      { line: 4, message: `"White" is already in an earlier row` },
     ]);
+  });
+
+  it("suffixes SKUs already in the system or used by an earlier row", () => {
+    const { rows, errors } = buildBulkRows(
+      [
+        { color: "Cyan", colorHex: null },
+        { color: "Sky Blue", colorHex: null },
+        { color: "Sky Bluish", colorHex: null },
+      ],
+      "Bambu",
+      "PLA",
+      ["BAMB-PLA-CYAN", "BAMB-PLA-CYAN-2"],
+    );
+    expect(errors).toEqual([]);
+    expect(rows.map((r) => r.sku)).toEqual(["BAMB-PLA-CYAN-3", "BAMB-PLA-SKYBLU", "BAMB-PLA-SKYBLU-2"]);
   });
 });
 

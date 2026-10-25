@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import { Plus, X } from "lucide-react";
-import { bulkCreateProducts } from "@/app/backstore/(app)/stock/actions";
+import { bulkCreateProducts, skusStartingWith } from "@/app/backstore/(app)/stock/actions";
 import { CatalogSelect } from "@/components/backstore/catalog-select";
 import { ColorPicker } from "@/components/backstore/color-picker";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { type BulkColor, buildBulkRows, parsePastedColors } from "@/lib/bulk";
+import { makeSku } from "@/lib/sku";
 import { cn } from "@/lib/utils";
 
 type Shared = { sellPriceSgd: string; openingQty: string; openingCostSgd: string; note: string };
@@ -46,7 +47,24 @@ export function BulkAddDialog({
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const focusNext = useRef<number | null>(null);
 
-  const parsed = useMemo(() => buildBulkRows(colors, brand, type), [colors, brand, type]);
+  // SKUs already in the system for this brand + type, so the preview shows the suffixed SKU that will be saved.
+  const [taken, setTaken] = useState<{ prefix: string; skus: string[] }>({ prefix: "", skus: [] });
+  const prefix = brand && type ? makeSku(brand, type, "") : "";
+  useEffect(() => {
+    if (!open || !prefix) return;
+    let stale = false;
+    skusStartingWith(prefix).then((res) => {
+      if (!stale && res.ok) setTaken({ prefix, skus: res.data });
+    });
+    return () => {
+      stale = true;
+    };
+  }, [open, prefix]);
+
+  const parsed = useMemo(
+    () => buildBulkRows(colors, brand, type, taken.prefix === prefix ? taken.skus : []),
+    [colors, brand, type, taken, prefix],
+  );
   const skuByLine = new Map(parsed.rows.map((r) => [r.line, r.sku]));
   const errorByLine = new Map(parsed.errors.map((e) => [e.line, e.message]));
   const count = parsed.rows.length;

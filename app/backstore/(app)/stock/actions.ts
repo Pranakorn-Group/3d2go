@@ -8,6 +8,7 @@ import { buildBulkRows } from "@/lib/bulk";
 import { weightedAverage } from "@/lib/costing";
 import { prisma } from "@/lib/db";
 import { toProduct } from "@/lib/dto";
+import { makeSku } from "@/lib/sku";
 
 const optionalText = z
   .string()
@@ -81,6 +82,17 @@ export async function saveProduct(input: ProductInput) {
   });
 }
 
+/** SKUs in the system starting with `prefix`, so generated SKUs can skip them (lib/sku.ts uniqueSku). */
+export async function skusStartingWith(prefix: string) {
+  return run(async () => {
+    await requireAdmin();
+    const p = z.string().trim().toUpperCase().parse(prefix);
+    if (!p) return [];
+    const found = await prisma.product.findMany({ where: { sku: { startsWith: p } }, select: { sku: true } });
+    return found.map((f) => f.sku);
+  });
+}
+
 const bulkSchema = z.object({
   brand: z.string().trim().min(1, "Pick a brand"),
   type: z.string().trim().min(1, "Pick a type"),
@@ -102,15 +114,13 @@ export async function bulkCreateProducts(input: z.input<typeof bulkSchema>) {
       bulkSchema.parse(input);
     await assertInCatalog(brand, type);
 
-    const { rows, errors } = buildBulkRows(colors, brand, type);
-    if (errors.length) throw new UserError(`Row ${errors[0].line}: ${errors[0].message}`);
-    if (!rows.length) throw new UserError("Add at least one color");
-
-    const taken = await prisma.product.findMany({
-      where: { sku: { in: rows.map((r) => r.sku) } },
+    const existing = await prisma.product.findMany({
+      where: { sku: { startsWith: makeSku(brand, type, "") } },
       select: { sku: true },
     });
-    if (taken.length) throw new UserError(`SKU already exists: ${taken.map((t) => t.sku).join(", ")}`);
+    const { rows, errors } = buildBulkRows(colors, brand, type, existing.map((e) => e.sku));
+    if (errors.length) throw new UserError(`Row ${errors[0].line}: ${errors[0].message}`);
+    if (!rows.length) throw new UserError("Add at least one color");
 
     await prisma.$transaction(async (tx) => {
       for (const r of rows) {
