@@ -51,6 +51,10 @@
 }
 
 :root {
+  /* Phone tab bar: its height, and the space from the screen bottom to its top edge (gap + home indicator).
+     Anything floating above the tab bar (POS cart bar) offsets from --tabbar-clear. */
+  --tabbar-h: 3.5rem;
+  --tabbar-clear: calc(var(--tabbar-h) + 0.5rem + env(safe-area-inset-bottom));
   --background: oklch(0.993 0.003 210);
   --foreground: oklch(0.2 0.02 225);
   --card: oklch(1 0 0);

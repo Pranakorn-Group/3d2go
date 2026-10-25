@@ -4,6 +4,7 @@ import { Plus, Truck } from "lucide-react";
 import { EmptyState } from "@/components/backstore/empty-state";
 import { PageHeader } from "@/components/backstore/page-header";
 import { StatusBadge } from "@/components/backstore/status-badge";
+import { Stagger, StaggerItem } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -114,29 +115,31 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             </Table>
           </Card>
 
-          <div className="grid gap-2 md:hidden">
-            {orders.map((o) => (
-              <Link key={o.id} href={`/backstore/orders/${o.id}`}>
-                <Card className="gap-1 px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{o.code}</span>
-                    <StatusBadge status={o.status} />
-                  </div>
-                  <div className="text-sm">{o.supplier}</div>
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>
-                      {formatDate(o.orderedAt)} · {rolls(o.items.reduce((s, i) => s + i.qty, 0))}
-                      {etaOf(o) && ` · est. ${formatDate(etaOf(o))}`}
-                    </span>
-                    <span className="tabular-nums">
-                      {formatMoney(sumValue(o.items), o.currency)}
-                      {o.totalPaidSgd !== null && ` · ${formatSGD(o.totalPaidSgd)}`}
-                    </span>
-                  </div>
-                </Card>
-              </Link>
+          <Stagger className="grid gap-2 md:hidden">
+            {orders.map((o, index) => (
+              <StaggerItem key={o.id} index={index}>
+                <Link href={`/backstore/orders/${o.id}`}>
+                  <Card className="gap-1 px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{o.code}</span>
+                      <StatusBadge status={o.status} />
+                    </div>
+                    <div className="text-sm">{o.supplier}</div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>
+                        {formatDate(o.orderedAt)} · {rolls(o.items.reduce((s, i) => s + i.qty, 0))}
+                        {etaOf(o) && ` · est. ${formatDate(etaOf(o))}`}
+                      </span>
+                      <span className="tabular-nums">
+                        {formatMoney(sumValue(o.items), o.currency)}
+                        {o.totalPaidSgd !== null && ` · ${formatSGD(o.totalPaidSgd)}`}
+                      </span>
+                    </div>
+                  </Card>
+                </Link>
+              </StaggerItem>
             ))}
-          </div>
+          </Stagger>
         </>
       )}
     </>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { MotionConfig } from "motion/react";
 import { ThemeProvider, useTheme } from "next-themes";
 import { Toaster } from "react-hot-toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -36,7 +37,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       // data block so React 19 doesn't warn "Encountered a script tag" (the script has suppressHydrationWarning).
       scriptProps={{ type: typeof window === "undefined" ? "text/javascript" : "application/json" }}
     >
-      <TooltipProvider>{children}</TooltipProvider>
+      {/* Respect the OS "reduce motion" setting: animations become instant fades. */}
+      <MotionConfig reducedMotion="user">
+        <TooltipProvider>{children}</TooltipProvider>
+      </MotionConfig>
       <ThemeColor />
       <Toaster
         position="top-center"

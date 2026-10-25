@@ -27,6 +27,7 @@ import { ColorSwatch } from "@/components/backstore/color-swatch";
 import { EmptyState } from "@/components/backstore/empty-state";
 import { PageHeader } from "@/components/backstore/page-header";
 import { ProductDialog } from "@/components/backstore/product-dialog";
+import { Stagger, StaggerItem } from "@/components/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -284,144 +285,146 @@ export function StockView({
           {products.length ? "Try another search or filter." : "Add your first filament to start tracking stock."}
         </EmptyState>
       ) : (
-        <div className="grid gap-3">
-          {groups.map((g) => {
+        <Stagger className="grid gap-3">
+          {groups.map((g, gi) => {
             const isOpen = !collapsed.has(g.key);
             const sum = summarizeStock(g.items);
             const low = g.items.filter((p) => p.active && available(p) <= p.lowStockAt).length;
             return (
-              <Card key={g.key} className="gap-0 py-0">
-                <div className="flex items-center gap-2 px-2 py-2 sm:px-3">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={isOpen ? "Collapse" : "Expand"}
-                    aria-expanded={isOpen}
-                    onClick={() => toggleGroup(g.key)}
-                  >
-                    <ChevronRight className={cn("transition-transform", isOpen && "rotate-90")} />
-                  </Button>
-                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleGroup(g.key)}>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="truncate font-semibold">
-                        {g.brand} <span className="font-normal">{g.type}</span>
-                      </span>
-                      <div className="flex -space-x-1">
-                        {g.items.slice(0, 8).map((p) => (
-                          <ColorSwatch key={p.id} hex={p.colorHex} className="size-3.5 ring-2 ring-card" />
+              <StaggerItem key={g.key} index={gi} className="grid">
+                <Card className="gap-0 py-0">
+                  <div className="flex items-center gap-2 px-2 py-2 sm:px-3">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={isOpen ? "Collapse" : "Expand"}
+                      aria-expanded={isOpen}
+                      onClick={() => toggleGroup(g.key)}
+                    >
+                      <ChevronRight className={cn("transition-transform", isOpen && "rotate-90")} />
+                    </Button>
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleGroup(g.key)}>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="truncate font-semibold">
+                          {g.brand} <span className="font-normal">{g.type}</span>
+                        </span>
+                        <div className="flex -space-x-1">
+                          {g.items.slice(0, 8).map((p) => (
+                            <ColorSwatch key={p.id} hex={p.colorHex} className="size-3.5 ring-2 ring-card" />
+                          ))}
+                        </div>
+                        {low > 0 && (
+                          <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                            {low} low
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground tabular-nums">
+                        {g.items.length} color{g.items.length === 1 ? "" : "s"} · {rolls(g.rolls)} · {priceRange(g.items)}
+                      </div>
+                      <div className="text-xs text-muted-foreground tabular-nums">
+                        {formatSGD(sum.cost)} at cost · est. profit{" "}
+                        <span className={sum.profit < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}>
+                          {formatSGD(sum.profit)} ({formatPct(sum.pct)})
+                        </span>
+                      </div>
+                    </button>
+                    <Button variant="outline" size="sm" onClick={() => setBulkEditing(g)}>
+                      <PencilLine /> <span className="hidden sm:inline">Edit all</span>
+                    </Button>
+                  </div>
+
+                  {isOpen && (
+                    <>
+                      {/* Desktop table */}
+                      <div className="hidden border-t md:block">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="pl-4">Color</TableHead>
+                              <TableHead>SKU</TableHead>
+                              <TableHead className="text-right">Amt</TableHead>
+                              <TableHead className="text-right">Cost</TableHead>
+                              <TableHead className="text-right">Price</TableHead>
+                              <TableHead className="text-right">Est. profit</TableHead>
+                              <TableHead className="text-center">Ref</TableHead>
+                              <TableHead className="hidden xl:table-cell">Mark</TableHead>
+                              <TableHead className="w-10" />
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {g.items.map((p) => {
+                              const u = unitProfit(p);
+                              return (
+                                <TableRow key={p.id}>
+                                  <TableCell className="pl-4">
+                                    <Link href={`/backstore/stock/${p.id}`} className="flex items-center gap-2.5 hover:underline">
+                                      <ColorSwatch hex={p.colorHex} className="size-5" />
+                                      <span className="font-medium">{p.color}</span>
+                                    </Link>
+                                  </TableCell>
+                                  <TableCell className="font-mono text-xs">{p.sku}</TableCell>
+                                  <TableCell className="text-right">
+                                    <StockLevel p={p} incoming={incoming[p.id]} />
+                                  </TableCell>
+                                  <TableCell className="text-right tabular-nums">{formatSGD(p.avgCostSgd)}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{formatSGD(p.sellPriceSgd)}</TableCell>
+                                  <TableCell className="text-right">
+                                    <EstProfit p={p} className="font-medium" />
+                                    {u && <div className="text-xs text-muted-foreground tabular-nums">{formatSGD(u.profit)}/roll</div>}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {p.refUrl ? (
+                                      <a href={p.refUrl} target="_blank" rel="noreferrer" className="inline-flex text-primary" aria-label="Supplier link">
+                                        <ExternalLink className="size-4" />
+                                      </a>
+                                    ) : (
+                                      <span className="text-muted-foreground">—</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="hidden max-w-48 truncate text-muted-foreground xl:table-cell" title={p.note ?? ""}>
+                                    {p.note || "—"}
+                                  </TableCell>
+                                  <TableCell className="pr-2">{actions(p)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {/* Mobile rows */}
+                      <div className="divide-y border-t md:hidden">
+                        {g.items.map((p) => (
+                          <div key={p.id} className="flex items-center gap-3 py-2 pr-2 pl-4">
+                            <ColorSwatch hex={p.colorHex} className="size-5" />
+                            <Link href={`/backstore/stock/${p.id}`} className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate font-medium">{p.color}</span>
+                                {p.refUrl && <ExternalLink className="size-3 shrink-0 text-primary" />}
+                              </div>
+                              <div className="truncate font-mono text-xs text-muted-foreground">
+                                {p.sku}
+                                {p.note && <span className="font-sans"> · {p.note}</span>}
+                              </div>
+                            </Link>
+                            <div className="text-right text-sm">
+                              <StockLevel p={p} incoming={incoming[p.id]} />
+                              <div className="text-xs text-muted-foreground tabular-nums">
+                                {formatSGD(p.sellPriceSgd)} · <EstProfit p={p} />
+                              </div>
+                            </div>
+                            {actions(p)}
+                          </div>
                         ))}
                       </div>
-                      {low > 0 && (
-                        <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                          {low} low
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground tabular-nums">
-                      {g.items.length} color{g.items.length === 1 ? "" : "s"} · {rolls(g.rolls)} · {priceRange(g.items)}
-                    </div>
-                    <div className="text-xs text-muted-foreground tabular-nums">
-                      {formatSGD(sum.cost)} at cost · est. profit{" "}
-                      <span className={sum.profit < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}>
-                        {formatSGD(sum.profit)} ({formatPct(sum.pct)})
-                      </span>
-                    </div>
-                  </button>
-                  <Button variant="outline" size="sm" onClick={() => setBulkEditing(g)}>
-                    <PencilLine /> <span className="hidden sm:inline">Edit all</span>
-                  </Button>
-                </div>
-
-                {isOpen && (
-                  <>
-                    {/* Desktop table */}
-                    <div className="hidden border-t md:block">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="pl-4">Color</TableHead>
-                            <TableHead>SKU</TableHead>
-                            <TableHead className="text-right">Amt</TableHead>
-                            <TableHead className="text-right">Cost</TableHead>
-                            <TableHead className="text-right">Price</TableHead>
-                            <TableHead className="text-right">Est. profit</TableHead>
-                            <TableHead className="text-center">Ref</TableHead>
-                            <TableHead className="hidden xl:table-cell">Mark</TableHead>
-                            <TableHead className="w-10" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {g.items.map((p) => {
-                            const u = unitProfit(p);
-                            return (
-                              <TableRow key={p.id}>
-                                <TableCell className="pl-4">
-                                  <Link href={`/backstore/stock/${p.id}`} className="flex items-center gap-2.5 hover:underline">
-                                    <ColorSwatch hex={p.colorHex} className="size-5" />
-                                    <span className="font-medium">{p.color}</span>
-                                  </Link>
-                                </TableCell>
-                                <TableCell className="font-mono text-xs">{p.sku}</TableCell>
-                                <TableCell className="text-right">
-                                  <StockLevel p={p} incoming={incoming[p.id]} />
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">{formatSGD(p.avgCostSgd)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{formatSGD(p.sellPriceSgd)}</TableCell>
-                                <TableCell className="text-right">
-                                  <EstProfit p={p} className="font-medium" />
-                                  {u && <div className="text-xs text-muted-foreground tabular-nums">{formatSGD(u.profit)}/roll</div>}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {p.refUrl ? (
-                                    <a href={p.refUrl} target="_blank" rel="noreferrer" className="inline-flex text-primary" aria-label="Supplier link">
-                                      <ExternalLink className="size-4" />
-                                    </a>
-                                  ) : (
-                                    <span className="text-muted-foreground">—</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="hidden max-w-48 truncate text-muted-foreground xl:table-cell" title={p.note ?? ""}>
-                                  {p.note || "—"}
-                                </TableCell>
-                                <TableCell className="pr-2">{actions(p)}</TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    {/* Mobile rows */}
-                    <div className="divide-y border-t md:hidden">
-                      {g.items.map((p) => (
-                        <div key={p.id} className="flex items-center gap-3 py-2 pr-2 pl-4">
-                          <ColorSwatch hex={p.colorHex} className="size-5" />
-                          <Link href={`/backstore/stock/${p.id}`} className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="truncate font-medium">{p.color}</span>
-                              {p.refUrl && <ExternalLink className="size-3 shrink-0 text-primary" />}
-                            </div>
-                            <div className="truncate font-mono text-xs text-muted-foreground">
-                              {p.sku}
-                              {p.note && <span className="font-sans"> · {p.note}</span>}
-                            </div>
-                          </Link>
-                          <div className="text-right text-sm">
-                            <StockLevel p={p} incoming={incoming[p.id]} />
-                            <div className="text-xs text-muted-foreground tabular-nums">
-                              {formatSGD(p.sellPriceSgd)} · <EstProfit p={p} />
-                            </div>
-                          </div>
-                          {actions(p)}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </Card>
+                    </>
+                  )}
+                </Card>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
 
       {editing && (

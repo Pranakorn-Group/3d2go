@@ -4,6 +4,7 @@ import { AlertTriangle, BookmarkCheck, Boxes, Coins, PiggyBank, Plus, ShoppingCa
 import { ProductLabel } from "@/components/backstore/color-swatch";
 import { StatCard } from "@/components/backstore/stat-card";
 import { StatusBadge } from "@/components/backstore/status-badge";
+import { FadeIn, Stagger, StaggerItem } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -147,214 +148,232 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Today's sales" value={formatSGD(Number(todaySales._sum.total ?? 0))} hint={`${todaySales._count} bills`} icon={Coins} />
-        <StatCard
-          label="Profit this month"
-          value={formatSGD(monthProfit)}
-          hint={`on ${formatSGD(monthRevenue)} revenue`}
-          icon={PiggyBank}
-        />
-        <StatCard
-          label="Stock value (cost)"
-          value={formatSGD(stockValue)}
-          hint={`${rollCount(rollsOnHand)} · est. profit ${formatSGD(stockSummary.profit)} (${formatPct(stockSummary.pct)})`}
-          icon={Boxes}
-        />
-        <StatCard
-          label="Incoming"
-          value={rollCount(incomingRolls)}
-          hint={`${openPOs.length} open orders`}
-          icon={Truck}
-        />
-      </div>
+      <Stagger className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StaggerItem index={0} className="grid">
+          <StatCard label="Today's sales" value={formatSGD(Number(todaySales._sum.total ?? 0))} hint={`${todaySales._count} bills`} icon={Coins} />
+        </StaggerItem>
+        <StaggerItem index={1} className="grid">
+          <StatCard
+            label="Profit this month"
+            value={formatSGD(monthProfit)}
+            hint={`on ${formatSGD(monthRevenue)} revenue`}
+            icon={PiggyBank}
+          />
+        </StaggerItem>
+        <StaggerItem index={2} className="grid">
+          <StatCard
+            label="Stock value (cost)"
+            value={formatSGD(stockValue)}
+            hint={`${rollCount(rollsOnHand)} · est. profit ${formatSGD(stockSummary.profit)} (${formatPct(stockSummary.pct)})`}
+            icon={Boxes}
+          />
+        </StaggerItem>
+        <StaggerItem index={3} className="grid">
+          <StatCard
+            label="Incoming"
+            value={rollCount(incomingRolls)}
+            hint={`${openPOs.length} open orders`}
+            icon={Truck}
+          />
+        </StaggerItem>
+      </Stagger>
 
-      <Card className="mt-6 gap-2">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Tags className="size-4 text-primary" /> By brand
-          </CardTitle>
-          <CardDescription>Est. profit if stock on hand sells at current prices · sales this month</CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
-          {brandRows.length === 0 ? (
-            <Empty>No filament yet.</Empty>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Brand</TableHead>
-                  <TableHead className="text-right">Rolls</TableHead>
-                  <TableHead className="hidden text-right sm:table-cell">Stock cost</TableHead>
-                  <TableHead className="text-right">Est. profit</TableHead>
-                  <TableHead className="hidden text-right md:table-cell">Sold this month</TableHead>
-                  <TableHead className="hidden pr-6 text-right md:table-cell">Profit this month</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {brandRows.map((r) => (
-                  <TableRow key={r.brand}>
-                    <TableCell className="pl-6">
-                      <div className="font-medium">{r.brand}</div>
-                      <div className="text-xs text-muted-foreground">{r.skus} SKUs</div>
-                    </TableCell>
-                    <BrandCells row={r} />
-                  </TableRow>
-                ))}
-              </TableBody>
-              {brandRows.length > 1 && (
-                <TableFooter>
+      <FadeIn delay={0.15}>
+        <Card className="mt-6 gap-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Tags className="size-4 text-primary" /> By brand
+            </CardTitle>
+            <CardDescription>Est. profit if stock on hand sells at current prices · sales this month</CardDescription>
+          </CardHeader>
+          <CardContent className="px-0">
+            {brandRows.length === 0 ? (
+              <Empty>No filament yet.</Empty>
+            ) : (
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell className="pl-6 font-medium">Total</TableCell>
-                    <BrandCells row={brandTotal} />
+                    <TableHead className="pl-6">Brand</TableHead>
+                    <TableHead className="text-right">Rolls</TableHead>
+                    <TableHead className="hidden text-right sm:table-cell">Stock cost</TableHead>
+                    <TableHead className="text-right">Est. profit</TableHead>
+                    <TableHead className="hidden text-right md:table-cell">Sold this month</TableHead>
+                    <TableHead className="hidden pr-6 text-right md:table-cell">Profit this month</TableHead>
                   </TableRow>
-                </TableFooter>
-              )}
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card className="gap-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="size-4 text-amber-500" /> Low stock
-            </CardTitle>
-            <CardAction>
-              <Button asChild variant="link" size="sm">
-                <Link href="/backstore/stock">Stock</Link>
-              </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {lowStock.length === 0 ? (
-              <Empty>Everything is well stocked.</Empty>
-            ) : (
-              <ul className="divide-y">
-                {lowStock.slice(0, 8).map((p) => (
-                  <li key={p.id}>
-                    <Link href={`/backstore/stock/${p.id}`} className="flex items-center justify-between gap-3 py-2.5">
-                      <ProductLabel product={p} />
-                      <span className={`shrink-0 text-sm font-semibold tabular-nums ${p.stockQty === 0 ? "text-destructive" : "text-amber-600 dark:text-amber-400"}`}>
-                        {p.stockQty - p.reservedQty} left
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+                </TableHeader>
+                <TableBody>
+                  {brandRows.map((r) => (
+                    <TableRow key={r.brand}>
+                      <TableCell className="pl-6">
+                        <div className="font-medium">{r.brand}</div>
+                        <div className="text-xs text-muted-foreground">{r.skus} SKUs</div>
+                      </TableCell>
+                      <BrandCells row={r} />
+                    </TableRow>
+                  ))}
+                </TableBody>
+                {brandRows.length > 1 && (
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell className="pl-6 font-medium">Total</TableCell>
+                      <BrandCells row={brandTotal} />
+                    </TableRow>
+                  </TableFooter>
+                )}
+              </Table>
             )}
           </CardContent>
         </Card>
+      </FadeIn>
 
-        <Card className="gap-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BookmarkCheck className="size-4 text-primary" /> Reservations
-            </CardTitle>
-            <CardAction>
-              <Button asChild variant="link" size="sm">
-                <Link href="/backstore/sales?tab=reserved">{formatSGD(reservedValue)} held</Link>
-              </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {reservations.length === 0 ? (
-              <Empty>No active reservations.</Empty>
-            ) : (
-              <ul className="divide-y">
-                {reservations.slice(0, 6).map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{r.customerName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {r.code} · {rollCount(r.items.reduce((s, i) => s + i.qty, 0))}
-                        {r.dueDate && ` · by ${formatDate(r.dueDate)}`}
-                      </div>
-                    </div>
-                    <span className="shrink-0 tabular-nums">{formatSGD(Number(r.total))}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Truck className="size-4 text-primary" /> Open purchase orders
-            </CardTitle>
-            <CardAction>
-              <Button asChild variant="link" size="sm">
-                <Link href="/backstore/orders">All orders</Link>
-              </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {openPOs.length === 0 ? (
-              <Empty>Nothing on the way.</Empty>
-            ) : (
-              <ul className="divide-y">
-                {openPOs.slice(0, 6).map((po) => (
-                  <li key={po.id}>
-                    <Link href={`/backstore/orders/${po.id}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                      <div className="min-w-0">
-                        <div className="font-medium">{po.code}</div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {po.supplier} · {formatDate(po.orderedAt)} · {rollCount(po.items.reduce((s, i) => s + i.qty, 0))}
-                        </div>
-                      </div>
-                      <StatusBadge status={po.status} />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Coins className="size-4 text-primary" /> Recent sales
-            </CardTitle>
-            <CardAction>
-              <Button asChild variant="link" size="sm">
-                <Link href="/backstore/sales">All sales</Link>
-              </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {recentSales.length === 0 ? (
-              <Empty>No sales yet.</Empty>
-            ) : (
-              <ul className="divide-y">
-                {recentSales.map((s) => {
-                  const profit = Number(s.total) - Number(s.costTotal ?? 0);
-                  return (
-                    <li key={s.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                      <div className="min-w-0">
-                        <div className="font-medium">{s.code}</div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {formatDateTime(s.completedAt)}
-                          {s.customerName && ` · ${s.customerName}`}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="tabular-nums">{formatSGD(Number(s.total))}</div>
-                        <div className={`text-xs tabular-nums ${profit < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
-                          +{formatSGD(profit)}
-                        </div>
-                      </div>
+      <Stagger className="mt-6 grid gap-4 lg:grid-cols-2">
+        <StaggerItem index={0} className="grid">
+          <Card className="gap-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="size-4 text-amber-500" /> Low stock
+              </CardTitle>
+              <CardAction>
+                <Button asChild variant="link" size="sm">
+                  <Link href="/backstore/stock">Stock</Link>
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {lowStock.length === 0 ? (
+                <Empty>Everything is well stocked.</Empty>
+              ) : (
+                <ul className="divide-y">
+                  {lowStock.slice(0, 8).map((p) => (
+                    <li key={p.id}>
+                      <Link href={`/backstore/stock/${p.id}`} className="flex items-center justify-between gap-3 py-2.5">
+                        <ProductLabel product={p} />
+                        <span className={`shrink-0 text-sm font-semibold tabular-nums ${p.stockQty === 0 ? "text-destructive" : "text-amber-600 dark:text-amber-400"}`}>
+                          {p.stockQty - p.reservedQty} left
+                        </span>
+                      </Link>
                     </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </StaggerItem>
+
+        <StaggerItem index={1} className="grid">
+          <Card className="gap-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookmarkCheck className="size-4 text-primary" /> Reservations
+              </CardTitle>
+              <CardAction>
+                <Button asChild variant="link" size="sm">
+                  <Link href="/backstore/sales?tab=reserved">{formatSGD(reservedValue)} held</Link>
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {reservations.length === 0 ? (
+                <Empty>No active reservations.</Empty>
+              ) : (
+                <ul className="divide-y">
+                  {reservations.slice(0, 6).map((r) => (
+                    <li key={r.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{r.customerName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {r.code} · {rollCount(r.items.reduce((s, i) => s + i.qty, 0))}
+                          {r.dueDate && ` · by ${formatDate(r.dueDate)}`}
+                        </div>
+                      </div>
+                      <span className="shrink-0 tabular-nums">{formatSGD(Number(r.total))}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </StaggerItem>
+
+        <StaggerItem index={2} className="grid">
+          <Card className="gap-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Truck className="size-4 text-primary" /> Open purchase orders
+              </CardTitle>
+              <CardAction>
+                <Button asChild variant="link" size="sm">
+                  <Link href="/backstore/orders">All orders</Link>
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {openPOs.length === 0 ? (
+                <Empty>Nothing on the way.</Empty>
+              ) : (
+                <ul className="divide-y">
+                  {openPOs.slice(0, 6).map((po) => (
+                    <li key={po.id}>
+                      <Link href={`/backstore/orders/${po.id}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                        <div className="min-w-0">
+                          <div className="font-medium">{po.code}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {po.supplier} · {formatDate(po.orderedAt)} · {rollCount(po.items.reduce((s, i) => s + i.qty, 0))}
+                          </div>
+                        </div>
+                        <StatusBadge status={po.status} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </StaggerItem>
+
+        <StaggerItem index={3} className="grid">
+          <Card className="gap-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Coins className="size-4 text-primary" /> Recent sales
+              </CardTitle>
+              <CardAction>
+                <Button asChild variant="link" size="sm">
+                  <Link href="/backstore/sales">All sales</Link>
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {recentSales.length === 0 ? (
+                <Empty>No sales yet.</Empty>
+              ) : (
+                <ul className="divide-y">
+                  {recentSales.map((s) => {
+                    const profit = Number(s.total) - Number(s.costTotal ?? 0);
+                    return (
+                      <li key={s.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                        <div className="min-w-0">
+                          <div className="font-medium">{s.code}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {formatDateTime(s.completedAt)}
+                            {s.customerName && ` · ${s.customerName}`}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="tabular-nums">{formatSGD(Number(s.total))}</div>
+                          <div className={`text-xs tabular-nums ${profit < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
+                            +{formatSGD(profit)}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </StaggerItem>
+      </Stagger>
     </>
   );
 }

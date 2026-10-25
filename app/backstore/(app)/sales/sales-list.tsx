@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Stagger, StaggerItem } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -153,42 +154,44 @@ export function SalesList({ sales }: { sales: SaleDTO[] }) {
 
   return (
     <>
-      <div className="grid gap-2">
-        {sales.map((s) => {
+      <Stagger className="grid gap-2">
+        {sales.map((s, index) => {
           const p = profit(s);
           const overdue = s.status === "RESERVED" && s.dueDate && new Date(s.dueDate).getTime() < now;
           return (
-            <Card key={s.id} className="py-0">
-              <button type="button" onClick={() => setOpenId(s.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{s.code}</span>
-                    <StatusBadge status={s.status} />
-                    {overdue && <span className="text-xs font-medium text-destructive">Overdue</span>}
-                  </div>
-                  <div className="mt-0.5 truncate text-sm text-muted-foreground">
-                    {s.customerName ? `${s.customerName} · ` : ""}
-                    {s.items.map((i) => `${i.qty}× ${i.product.color} ${i.product.type}`).join(", ")}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatDateTime(s.createdAt)}
-                    {s.status === "RESERVED" && s.dueDate && ` · pick up by ${formatDate(s.dueDate)}`}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-semibold tabular-nums">{formatSGD(s.total)}</div>
-                  {p !== null && s.status === "COMPLETED" && (
-                    <div className={`text-xs tabular-nums ${p < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
-                      +{formatSGD(p)}
+            <StaggerItem key={s.id} index={index} className="grid">
+              <Card className="py-0">
+                <button type="button" onClick={() => setOpenId(s.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{s.code}</span>
+                      <StatusBadge status={s.status} />
+                      {overdue && <span className="text-xs font-medium text-destructive">Overdue</span>}
                     </div>
-                  )}
-                </div>
-                <ChevronRight className="size-4 text-muted-foreground" />
-              </button>
-            </Card>
+                    <div className="mt-0.5 truncate text-sm text-muted-foreground">
+                      {s.customerName ? `${s.customerName} · ` : ""}
+                      {s.items.map((i) => `${i.qty}× ${i.product.color} ${i.product.type}`).join(", ")}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatDateTime(s.createdAt)}
+                      {s.status === "RESERVED" && s.dueDate && ` · pick up by ${formatDate(s.dueDate)}`}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold tabular-nums">{formatSGD(s.total)}</div>
+                    {p !== null && s.status === "COMPLETED" && (
+                      <div className={`text-xs tabular-nums ${p < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
+                        +{formatSGD(p)}
+                      </div>
+                    )}
+                  </div>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </button>
+              </Card>
+            </StaggerItem>
           );
         })}
-      </div>
+      </Stagger>
       <Dialog open={!!open} onOpenChange={(o) => !o && setOpenId(null)}>
         <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-md">
           {open && <SaleDetail sale={open} onDone={() => setOpenId(null)} />}

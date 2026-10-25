@@ -7,7 +7,7 @@ import { useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { activeItem, NAV, TABS } from "./nav";
 
-const tabClass = "flex h-14 w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-muted-foreground transition-colors";
+const tabClass = "flex h-(--tabbar-h) w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-muted-foreground transition-colors";
 
 /**
  * Bottom tab bar for phones: a floating glass pill above the home indicator. "More" opens the sidebar sheet with every

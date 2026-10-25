@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { LogoMark } from "@/components/brand/logo";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { InstallButton } from "./install-button";
 import { activeItem, groupOf } from "./nav";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -31,7 +32,8 @@ export function TopBar() {
         )}
         <span className="truncate font-medium">{item?.label ?? "Backstore"}</span>
       </nav>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-1">
+        <InstallButton />
         <ThemeToggle />
       </div>
     </header>

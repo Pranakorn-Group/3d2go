@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/backstore/page-header";
 import { StatusBadge } from "@/components/backstore/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Stagger, StaggerItem } from "@/components/motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getIncoming } from "@/lib/catalog";
@@ -67,14 +68,16 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
       />
       {p.note && <p className="-mt-2 mb-4 rounded-lg bg-muted px-3 py-2 text-sm">{p.note}</p>}
 
-      <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-        {stats.map((s) => (
-          <Card key={s.label} className="gap-0 px-4 py-3">
-            <div className="text-xs text-muted-foreground">{s.label}</div>
-            <div className="text-lg font-semibold tabular-nums">{s.value}</div>
-          </Card>
+      <Stagger className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        {stats.map((s, index) => (
+          <StaggerItem key={s.label} index={index} className="grid">
+            <Card className="gap-0 px-4 py-3">
+              <div className="text-xs text-muted-foreground">{s.label}</div>
+              <div className="text-lg font-semibold tabular-nums">{s.value}</div>
+            </Card>
+          </StaggerItem>
         ))}
-      </div>
+      </Stagger>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="gap-2">

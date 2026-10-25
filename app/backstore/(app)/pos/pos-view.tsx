@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "motion/react";
 import toast from "react-hot-toast";
 import { BookmarkPlus, Minus, PackageCheck, Plus, QrCode, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { createSale } from "@/app/backstore/(app)/sales/actions";
@@ -26,6 +28,9 @@ type CartLine = { productId: string; qty: number; unitPrice: string };
 type Group = { key: string; items: ProductDTO[] };
 
 const groupKey = (p: ProductDTO) => `${p.brand} ${p.type}`;
+const noop = () => () => {};
+/** False during SSR and hydration, true after, so client-only portals don't mismatch the server HTML. */
+const useMounted = () => useSyncExternalStore(noop, () => true, () => false);
 
 export function PosView({
   products,
@@ -51,6 +56,7 @@ export function PosView({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [qr, setQr] = useState<PayNowRequest | null>(null);
   const [pending, startTransition] = useTransition();
+  const mounted = useMounted();
 
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   // Products arrive sorted by brand, type, color, so groups keep that order.
@@ -156,53 +162,63 @@ export function PosView({
         <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">Tap filament to add it</p>
       ) : (
         <ul className="grid gap-3">
-          {cart.map((l) => {
-            const p = byId.get(l.productId)!;
-            return (
-              <li key={l.productId} className="grid gap-2">
-                <div className="flex items-start gap-2">
-                  <ColorSwatch hex={p.colorHex} className="mt-0.5 size-5" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">
-                      {p.brand} {p.type} · {p.color}
+          <AnimatePresence initial={false} mode="popLayout">
+            {cart.map((l) => {
+              const p = byId.get(l.productId)!;
+              return (
+                <motion.li
+                  key={l.productId}
+                  layout
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, x: -16 }}
+                  transition={{ duration: 0.2 }}
+                  className="grid gap-2"
+                >
+                  <div className="flex items-start gap-2">
+                    <ColorSwatch hex={p.colorHex} className="mt-0.5 size-5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">
+                        {p.brand} {p.type} · {p.color}
+                      </div>
+                      <div className="font-mono text-xs text-muted-foreground">{p.sku}</div>
                     </div>
-                    <div className="font-mono text-xs text-muted-foreground">{p.sku}</div>
-                  </div>
-                  <Button variant="ghost" size="icon-xs" aria-label="Remove" onClick={() => setQty(p.id, 0)}>
-                    <X />
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2 pl-7">
-                  <div className="flex items-center">
-                    <Button variant="outline" size="icon" className="rounded-r-none" aria-label="Less" onClick={() => setQty(p.id, l.qty - 1)}>
-                      <Minus />
-                    </Button>
-                    <span className="flex h-8 w-9 items-center justify-center border-y text-sm tabular-nums">{l.qty}</span>
-                    <Button variant="outline" size="icon" className="rounded-l-none" aria-label="More" onClick={() => setQty(p.id, l.qty + 1)}>
-                      <Plus />
+                    <Button variant="ghost" size="icon-xs" aria-label="Remove" onClick={() => setQty(p.id, 0)}>
+                      <X />
                     </Button>
                   </div>
-                  <span className="text-xs text-muted-foreground">×</span>
-                  <InputGroup className="w-28">
-                    <InputGroupAddon>S$</InputGroupAddon>
-                    <InputGroupInput
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.01"
-                      aria-label="Price per roll"
-                      value={l.unitPrice}
-                      onChange={(e) =>
-                        setCart((c) => c.map((x) => (x.productId === l.productId ? { ...x, unitPrice: e.target.value } : x)))
-                      }
-                      className="tabular-nums"
-                    />
-                  </InputGroup>
-                  <span className="ml-auto text-sm font-medium tabular-nums">{formatSGD(l.qty * (Number(l.unitPrice) || 0))}</span>
-                </div>
-              </li>
-            );
-          })}
+                  <div className="flex items-center gap-2 pl-7">
+                    <div className="flex items-center">
+                      <Button variant="outline" size="icon" className="rounded-r-none" aria-label="Less" onClick={() => setQty(p.id, l.qty - 1)}>
+                        <Minus />
+                      </Button>
+                      <span className="flex h-8 w-9 items-center justify-center border-y text-sm tabular-nums">{l.qty}</span>
+                      <Button variant="outline" size="icon" className="rounded-l-none" aria-label="More" onClick={() => setQty(p.id, l.qty + 1)}>
+                        <Plus />
+                      </Button>
+                    </div>
+                    <span className="text-xs text-muted-foreground">×</span>
+                    <InputGroup className="w-28">
+                      <InputGroupAddon>S$</InputGroupAddon>
+                      <InputGroupInput
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        aria-label="Price per roll"
+                        value={l.unitPrice}
+                        onChange={(e) =>
+                          setCart((c) => c.map((x) => (x.productId === l.productId ? { ...x, unitPrice: e.target.value } : x)))
+                        }
+                        className="tabular-nums"
+                      />
+                    </InputGroup>
+                    <span className="ml-auto text-sm font-medium tabular-nums">{formatSGD(l.qty * (Number(l.unitPrice) || 0))}</span>
+                  </div>
+                </motion.li>
+              );
+            })}
+          </AnimatePresence>
         </ul>
       )}
 
@@ -322,25 +338,38 @@ export function PosView({
                   </span>
                 </h2>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                  {g.items.map((p) => {
+                  {g.items.map((p, i) => {
                     const avail = available(p) - inCart(p.id);
                     const qty = inCart(p.id);
                     return (
-                      <button
+                      <motion.button
                         key={p.id}
                         type="button"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.25, delay: Math.min(i, 12) * 0.03 }}
+                        whileTap={avail > 0 ? { scale: 0.97 } : undefined}
                         onClick={() => add(p)}
                         disabled={avail <= 0}
                         className={cn(
-                          "relative flex flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-all hover:border-primary/60 hover:shadow-sm active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+                          "relative flex flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-[border-color,box-shadow] hover:border-primary/60 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50",
                           qty > 0 && "border-primary ring-1 ring-primary",
                         )}
                       >
-                        {qty > 0 && (
-                          <span className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                            {qty}
-                          </span>
-                        )}
+                        <AnimatePresence>
+                          {qty > 0 && (
+                            <motion.span
+                              key={qty}
+                              initial={{ scale: 0.4, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0.4, opacity: 0 }}
+                              transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                              className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
+                            >
+                              {qty}
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
                         <span className="h-10 w-10 rounded-full border-4 border-black/5 shadow-inner dark:border-white/10" style={{ backgroundColor: p.colorHex ?? "var(--muted)" }} />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium">{p.color}</span>
@@ -355,7 +384,7 @@ export function PosView({
                         {restock[p.id] && available(p) <= p.lowStockAt && (
                           <span className="text-xs text-muted-foreground">Back ~{formatDayMonth(restock[p.id])}</span>
                         )}
-                      </button>
+                      </motion.button>
                     );
                   })}
                 </div>
@@ -373,20 +402,30 @@ export function PosView({
         <CardContent>{cartPanel}</CardContent>
       </Card>
 
-      {/* Mobile cart bar + sheet */}
-      <div
-        className={cn(
-          "fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 p-3 pr-[max(--spacing(3),env(safe-area-inset-right))] pl-[max(--spacing(3),env(safe-area-inset-left))] transition-transform md:bottom-0 lg:hidden",
-          count === 0 && "pointer-events-none translate-y-[200%]",
+      {/* Mobile cart bar + sheet. The bar is portalled to <body>: the page-transition wrapper sets a transform, which
+          would otherwise make `fixed` relative to it. It floats above the tab bar (--tabbar-clear) and above it in z. */}
+      {mounted &&
+        createPortal(
+          <AnimatePresence>
+            {count > 0 && (
+              <motion.div
+                initial={{ y: 24, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 24, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                className="fixed right-[max(--spacing(3),env(safe-area-inset-right))] bottom-[calc(var(--tabbar-clear)+--spacing(2))] left-[max(--spacing(3),env(safe-area-inset-left))] z-[45] md:bottom-[calc(--spacing(3)+env(safe-area-inset-bottom))] lg:hidden"
+              >
+                <Button size="lg" className="h-12 w-full justify-between rounded-full px-5 text-base shadow-lg" onClick={() => setSheetOpen(true)}>
+                  <span className="flex items-center gap-2">
+                    <ShoppingCart /> {rolls(count)}
+                  </span>
+                  <span className="tabular-nums">{formatSGD(total)}</span>
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
         )}
-      >
-        <Button size="lg" className="h-12 w-full justify-between rounded-full px-5 text-base shadow-lg" onClick={() => setSheetOpen(true)}>
-          <span className="flex items-center gap-2">
-            <ShoppingCart /> {rolls(count)}
-          </span>
-          <span className="tabular-nums">{formatSGD(total)}</span>
-        </Button>
-      </div>
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="bottom" className="max-h-[88svh] overflow-y-auto rounded-t-2xl">
           <SheetHeader className="pb-0">
@@ -396,6 +435,7 @@ export function PosView({
           <div className="px-4 pb-6">{cartPanel}</div>
         </SheetContent>
       </Sheet>
+      {/* Room for the cart bar (3.5rem + gap) on top of the layout padding that already clears the tab bar. */}
       <div className="h-16 lg:hidden" aria-hidden />
       {paynow && <PayNowDialog config={paynow} request={qr} onOpenChange={(o) => !o && setQr(null)} />}
     </div>

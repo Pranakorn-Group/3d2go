@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import { KeyRound, Plus, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/backstore/page-header";
+import { Stagger, StaggerItem } from "@/components/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -180,34 +181,36 @@ export function UsersView({ users, meId }: { users: UserRow[]; meId: string }) {
       <PageHeader title="Users" description={`${users.length} accounts · ${admins} admin${admins === 1 ? "" : "s"}`}>
         <AddUserDialog />
       </PageHeader>
-      <div className="grid gap-2">
-        {users.map((u) => {
+      <Stagger className="grid gap-2">
+        {users.map((u, index) => {
           const isMe = u.id === meId;
           return (
-            <Card key={u.id} className="flex-row items-center gap-3 px-4 py-3">
-              <span
-                className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold uppercase",
-                  u.role === "ADMIN" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
-                )}
-              >
-                {u.role === "ADMIN" ? <ShieldCheck className="size-4" /> : (u.name ?? u.email).slice(0, 1)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium">{u.name ?? u.email}</span>
-                  {isMe && <Badge variant="secondary">You</Badge>}
+            <StaggerItem key={u.id} index={index} className="grid">
+              <Card className="flex-row items-center gap-3 px-4 py-3">
+                <span
+                  className={cn(
+                    "flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold uppercase",
+                    u.role === "ADMIN" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {u.role === "ADMIN" ? <ShieldCheck className="size-4" /> : (u.name ?? u.email).slice(0, 1)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium">{u.name ?? u.email}</span>
+                    {isMe && <Badge variant="secondary">You</Badge>}
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {u.name ? `${u.email} · ` : ""}joined {formatDate(u.createdAt)}
+                  </div>
                 </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {u.name ? `${u.email} · ` : ""}joined {formatDate(u.createdAt)}
-                </div>
-              </div>
-              <RoleSelect user={u} disabled={isMe} />
-              <ResetPasswordDialog user={u} />
-            </Card>
+                <RoleSelect user={u} disabled={isMe} />
+                <ResetPasswordDialog user={u} />
+              </Card>
+            </StaggerItem>
           );
         })}
-      </div>
+      </Stagger>
     </>
   );
 }
