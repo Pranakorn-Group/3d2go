@@ -22,3 +22,11 @@ export function nextSaleCode(tx: Prisma.TransactionClient) {
     tx.sale.findFirst({ where: { code: { startsWith: prefix } }, orderBy: { code: "desc" }, select: { code: true } }),
   );
 }
+
+export function nextSpoolSerial(tx: Prisma.TransactionClient) {
+  return next(`SP-${bkkStamp(true)}-`, (prefix) =>
+    tx.spool.findFirst({ where: { serial: { startsWith: prefix } }, orderBy: { serial: "desc" }, select: { serial: true } }).then(
+      (s) => s && { code: s.serial },
+    ),
+  );
+}

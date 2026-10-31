@@ -170,3 +170,19 @@
     background-color: var(--glass-tint, var(--background));
   }
 }
+
+/* Label sheets: only the element marked .print-area is printed, without the backstore chrome around it. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+  }
+}

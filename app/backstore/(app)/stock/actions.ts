@@ -191,11 +191,13 @@ export async function saveCatalogItem(input: z.input<typeof catalogSchema>) {
         const old = await tx.brand.findUniqueOrThrow({ where: { id } });
         await tx.brand.update({ where: { id }, data: { name } });
         await tx.product.updateMany({ where: { brand: old.name }, data: { brand: name } });
+        await tx.spoolSpec.updateMany({ where: { brand: old.name }, data: { brand: name } });
       } else {
         if (!id) return void (await tx.filamentType.create({ data: { name } }));
         const old = await tx.filamentType.findUniqueOrThrow({ where: { id } });
         await tx.filamentType.update({ where: { id }, data: { name } });
         await tx.product.updateMany({ where: { type: old.name }, data: { type: name } });
+        await tx.spoolSpec.updateMany({ where: { type: old.name }, data: { type: name } });
       }
     });
 

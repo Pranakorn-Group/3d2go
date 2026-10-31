@@ -74,3 +74,38 @@ export type SaleDTO = {
 };
 
 export const available = (p: Pick<ProductDTO, "stockQty" | "reservedQty">) => p.stockQty - p.reservedQty;
+
+export type SpoolStatus = "OPEN" | "EMPTY";
+
+export type SpoolUsageDTO = {
+  id: string;
+  beforeG: number;
+  afterG: number | null;
+  usedG: number | null;
+  slicerG: number | null;
+  jobRef: string | null;
+  costSgd: number | null;
+  note: string | null;
+  startedAt: string;
+  endedAt: string | null;
+};
+
+export type SpoolDTO = {
+  id: string;
+  serial: string;
+  status: SpoolStatus;
+  netG: number;
+  tareG: number;
+  densityGcm3: number;
+  startGrossG: number;
+  lastGrossG: number;
+  unitCostSgd: number;
+  note: string | null;
+  openedAt: string;
+  emptiedAt: string | null;
+  product: Pick<ProductDTO, "id" | "brand" | "type" | "color" | "colorHex" | "sku">;
+  /** The job currently on the printer (weighed in, not yet weighed out). */
+  running: SpoolUsageDTO | null;
+};
+
+export type SpoolSpecDTO = { brand: string; type: string; netG: number; tareG: number; densityGcm3: number; saved: boolean };

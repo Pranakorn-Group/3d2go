@@ -16,7 +16,7 @@ import { formatDate, formatDateTime, formatDayMonth, formatMoney, formatSGD } fr
 import { available } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const KIND_LABEL = { RECEIVE: "Received", SALE: "Sold", ADJUST: "Adjusted" } as const;
+const KIND_LABEL = { RECEIVE: "Received", SALE: "Sold", ADJUST: "Adjusted", OPEN: "Opened for printing" } as const;
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

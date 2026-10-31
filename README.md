@@ -7,6 +7,8 @@ Filament store. The customer-facing store is not built yet; everything lives in 
 - **Purchase orders**: record supplier orders in SGD or THB, mark shipped, receive into stock.
 - **POS**: sell or reserve rolls; reservations hold stock until picked up or cancelled.
 - **Sales & reservations**: complete / cancel reservations, void sales.
+- **Spools** (print service, filament2go): rolls opened for printing, each with a serial and a QR label.
+  Scan a spool, weigh it before the print and again after; the difference is the filament used and its cost.
 - **Users**: accounts are stored in the database with a role, `USER` (default) or `ADMIN`.
   Only admins can sign in to the backstore; an admin can add accounts and promote or demote other users.
 
@@ -28,6 +30,20 @@ the lines **in proportion to each line's value**:
 Each product's **Cost** is a weighted average: received rolls are blended with the rolls already
 on hand. Sales snapshot that cost so profit stays correct later. The maths is in `lib/costing.ts`
 (tested in `lib/costing.test.ts`).
+
+## Spool weighing (filament2go)
+
+Opening a spool takes one roll out of stock, weighs it full on its reel, and gives it a serial (`SP-YYMMDD-001`)
+whose QR label links to the spool's page. Every job is weighed in before printing and out afterwards:
+
+```
+used = before − after          left = last weight − empty reel
+cost = used × roll cost ÷ full-roll grams
+```
+
+Reels and filament differ, so each brand + type has its own empty-reel weight, full-roll grams and density
+(**Spools → Reel weights**), copied onto each spool when it is opened. A job can name the filament type it
+was sliced for; a spool of another type is refused. The maths is in `lib/spool.ts` (tested in `lib/spool.test.ts`).
 
 ## Getting started
 
@@ -54,7 +70,7 @@ pnpm dev                        # http://localhost:3000/backstore
 | Script | Does |
 | --- | --- |
 | `pnpm dev` / `pnpm build` / `pnpm start` | Next.js |
-| `pnpm test` | unit tests (costing) |
+| `pnpm test` | unit tests (costing, spool weighing, …) |
 | `pnpm db:migrate` / `pnpm db:deploy` | Prisma migrations (dev / production) |
 | `pnpm db:seed` | sample products (skipped if products exist) |
 | `pnpm db:studio` | browse the database |
@@ -64,10 +80,11 @@ pnpm dev                        # http://localhost:3000/backstore
 
 ```
 app/backstore/login         sign-in page + login/logout actions
-app/backstore/(app)/        dashboard, stock, orders, pos, sales (+ each area's actions.ts)
+app/backstore/(app)/        dashboard, stock, orders, pos, sales, spools (+ each area's actions.ts)
 components/backstore/       shared backstore UI (dialogs, cost breakdown, nav)
 components/brand/logo.tsx   logo mark + wordmark
 lib/costing.ts              landed-cost and weighted-average maths
+lib/spool.ts                spool weighing maths (remaining, used, cost, checks)
 lib/db.ts                   Prisma client
 lib/auth.ts                 current user + requireAdmin() guard used by every backstore page/action
 proxy.ts                    redirects signed-out visitors to /backstore/login

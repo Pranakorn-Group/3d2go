@@ -34,6 +34,13 @@ enum MovementKind {
   RECEIVE
   SALE
   ADJUST
+  /// A roll taken out of stock to be used by the print service (becomes a Spool).
+  OPEN
+}
+
+enum SpoolStatus {
+  OPEN
+  EMPTY
 }
 
 /// Brands and filament types are managed lists: they must exist before a product can use them.
@@ -72,6 +79,7 @@ model Product {
   purchaseItems PurchaseOrderItem[]
   saleItems     SaleItem[]
   movements     StockMovement[]
+  spools        Spool[]
 
   @@index([brand, type])
 }
@@ -165,6 +173,66 @@ model StockMovement {
   product Product @relation(fields: [productId], references: [id])
 
   @@index([productId, createdAt])
+}
+
+/// How a roll of one brand + type weighs: filament on a full roll, the empty reel, and density (g/cm³).
+/// Reels differ by brand and filament by type, so every weight sum uses the spool's own numbers (lib/spool.ts).
+model SpoolSpec {
+  id          String   @id @default(cuid())
+  brand       String
+  type        String
+  netG        Int      @default(1000)
+  tareG       Int
+  densityGcm3 Decimal  @db.Decimal(4, 2)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([brand, type])
+}
+
+/// One physical roll used by the print service (filament2go), labelled with a QR code of its serial.
+/// Remaining filament = lastGrossG − tareG. Weights are grams on the scale, reel included.
+model Spool {
+  id          String      @id @default(cuid())
+  serial      String      @unique
+  productId   String
+  status      SpoolStatus @default(OPEN)
+  netG        Int
+  tareG       Int
+  densityGcm3 Decimal     @db.Decimal(4, 2)
+  startGrossG Int
+  lastGrossG  Int
+  /// ต้นทุนต่อม้วน when opened; cost per gram = unitCostSgd / netG.
+  unitCostSgd Decimal     @db.Decimal(12, 2)
+  note        String?
+  openedAt    DateTime    @default(now())
+  emptiedAt   DateTime?
+
+  product Product      @relation(fields: [productId], references: [id])
+  usages  SpoolUsage[]
+
+  @@index([status, openedAt])
+  @@index([productId])
+}
+
+/// One print job's weigh-in. afterG is null while the job is running.
+model SpoolUsage {
+  id        String    @id @default(cuid())
+  spoolId   String
+  beforeG   Int
+  afterG    Int?
+  usedG     Int?
+  /// Slicer estimate, to compare with what was actually used.
+  slicerG   Int?
+  jobRef    String?
+  costSgd   Decimal?  @db.Decimal(12, 2)
+  note      String?
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  spool Spool @relation(fields: [spoolId], references: [id], onDelete: Cascade)
+
+  @@index([spoolId, startedAt])
+  @@index([endedAt])
 }
 
 model User {
