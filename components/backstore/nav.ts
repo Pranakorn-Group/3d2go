@@ -20,7 +20,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Print service",
+    label: "filament2go",
     items: [
       { href: "/backstore/spools", label: "Spools", icon: Cylinder },
       { href: "/backstore/spools/scan", label: "Scan & weigh", icon: ScanLine },

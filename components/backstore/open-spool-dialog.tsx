@@ -95,7 +95,7 @@ export function OpenSpoolDialog({
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Open a spool</DialogTitle>
-          <DialogDescription>Weigh a full roll on its reel. It gets a serial and a QR label for the print service.</DialogDescription>
+          <DialogDescription>Weigh a full roll on its reel. It gets a serial and a QR label for filament2go.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit}>
           <FieldGroup className="gap-4">

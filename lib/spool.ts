@@ -1,4 +1,4 @@
-// Spool weighing maths for the print service (filament2go). All weights are whole grams.
+// Spool weighing and pay-as-you-use pricing for filament2go (spools lent to customers). All weights are whole grams.
 // Every roll keeps its own net weight, reel (tare) weight and density, because they differ by brand and type:
 // never compare grams across spools without going through these helpers.
 
@@ -62,7 +62,7 @@ export function checkOpening(w: SpoolWeights, grossG: number): string | null {
   return null;
 }
 
-/** Problems with a job's before / after weights. `lastG` is the spool's last recorded weight. */
+/** Problems with the weight when a spool goes out to a customer, against its last recorded weight. */
 export function checkWeighIn(spool: SpoolWeights & { lastGrossG: number }, beforeG: number): string | null {
   if (beforeG < spool.tareG) return `${beforeG} g is lighter than the empty reel (${spool.tareG} g) — wrong spool?`;
   if (beforeG > spool.lastGrossG + DRIFT_G)
@@ -70,22 +70,28 @@ export function checkWeighIn(spool: SpoolWeights & { lastGrossG: number }, befor
   return null;
 }
 
+/** Problems with the weight when the customer brings the spool back. */
 export function checkWeighOut(spool: Pick<SpoolWeights, "tareG">, beforeG: number, afterG: number): string | null {
   if (afterG > beforeG) return `After (${afterG} g) can't be heavier than before (${beforeG} g)`;
   if (afterG < spool.tareG) return `${afterG} g is lighter than the empty reel (${spool.tareG} g) — wrong spool?`;
   return null;
 }
 
-/** Filament used by the print, and how far that was from the slicer's estimate (+ = used more). */
-export function usage(beforeG: number, afterG: number, slicerG?: number | null) {
-  const usedG = beforeG - afterG;
-  return { usedG, overG: slicerG == null ? null : usedG - slicerG };
+/**
+ * Pay-as-you-use costs more per gram than buying the whole roll: without a set lend price, a kg is
+ * the roll's sell price per kg × this.
+ */
+export const LEND_MARKUP = 1.3;
+
+/** Lend price per kg: the brand + type's set price, else the roll's sell price per kg × LEND_MARKUP. */
+export function lendRatePerKg(setPerKg: number | null | undefined, sellPriceSgd: number, netG: number) {
+  if (setPerKg != null) return setPerKg;
+  return netG > 0 ? Math.round(((sellPriceSgd * 1000) / netG) * LEND_MARKUP * 100) / 100 : 0;
 }
 
-/** Whether the job's filament type matches the spool. Types are compared loosely: "pla basic" = "PLA Basic". */
-export function sameType(a: string, b: string) {
-  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-  return norm(a) === norm(b);
+/** What the customer pays for `usedG` grams at `ratePerKg`, rounded to cents. */
+export function loanCharge(usedG: number, ratePerKg: number) {
+  return Math.round(((Math.max(0, usedG) * ratePerKg) / 1000) * 100) / 100;
 }
 
 /** The serial from a scanned QR code: either the bare serial or a link ending in /spools/<serial>. */

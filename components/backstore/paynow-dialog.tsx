@@ -28,23 +28,26 @@ export function PayNowDialog({
   config,
   request,
   onOpenChange,
+  actions,
 }: {
   config: PayNowConfig;
   request: PayNowRequest | null;
   onOpenChange: (open: boolean) => void;
+  /** Extra footer buttons, e.g. "Mark paid". */
+  actions?: React.ReactNode;
 }) {
   return (
     <Dialog open={!!request} onOpenChange={onOpenChange}>
       {/* No auto-focus: it would select the amount, and keypad presses append rather than replace a selection. */}
       <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-sm" onOpenAutoFocus={(e) => e.preventDefault()}>
         {/* Keyed so each new request starts from its own amount and reference. */}
-        {request && <PayNowForm key={`${request.reference}|${request.amount}`} config={config} request={request} />}
+        {request && <PayNowForm key={`${request.reference}|${request.amount}`} config={config} request={request} actions={actions} />}
       </DialogContent>
     </Dialog>
   );
 }
 
-function PayNowForm({ config, request }: { config: PayNowConfig; request: PayNowRequest }) {
+function PayNowForm({ config, request, actions }: { config: PayNowConfig; request: PayNowRequest; actions?: React.ReactNode }) {
   const billAmount = request.amount ? request.amount.toFixed(2) : "";
   const [amount, setAmount] = useState(billAmount);
   const [reference, setReference] = useState(request.reference);
@@ -151,6 +154,7 @@ function PayNowForm({ config, request }: { config: PayNowConfig; request: PayNow
             <Download /> Save image
           </a>
         </Button>
+        {actions}
       </DialogFooter>
     </>
   );

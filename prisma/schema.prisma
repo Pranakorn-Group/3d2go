@@ -34,7 +34,7 @@ enum MovementKind {
   RECEIVE
   SALE
   ADJUST
-  /// A roll taken out of stock to be used by the print service (becomes a Spool).
+  /// A roll taken out of stock to be lent by filament2go (becomes a Spool).
   OPEN
 }
 
@@ -178,18 +178,20 @@ model StockMovement {
 /// How a roll of one brand + type weighs: filament on a full roll, the empty reel, and density (g/cm³).
 /// Reels differ by brand and filament by type, so every weight sum uses the spool's own numbers (lib/spool.ts).
 model SpoolSpec {
-  id          String   @id @default(cuid())
-  brand       String
-  type        String
-  netG        Int      @default(1000)
-  tareG       Int
-  densityGcm3 Decimal  @db.Decimal(4, 2)
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  brand        String
+  type         String
+  netG         Int      @default(1000)
+  tareG        Int
+  densityGcm3  Decimal  @db.Decimal(4, 2)
+  /// filament2go pay-as-you-use price per kg. Null = the roll's sell price per kg × LEND_MARKUP (lib/spool.ts).
+  lendPerKgSgd Decimal? @db.Decimal(12, 2)
+  updatedAt    DateTime @updatedAt
 
   @@unique([brand, type])
 }
 
-/// One physical roll used by the print service (filament2go), labelled with a QR code of its serial.
+/// One physical roll lent out by filament2go, labelled with a QR code of its serial.
 /// Remaining filament = lastGrossG − tareG. Weights are grams on the scale, reel included.
 model Spool {
   id          String      @id @default(cuid())
@@ -207,32 +209,39 @@ model Spool {
   openedAt    DateTime    @default(now())
   emptiedAt   DateTime?
 
-  product Product      @relation(fields: [productId], references: [id])
-  usages  SpoolUsage[]
+  product Product     @relation(fields: [productId], references: [id])
+  loans   SpoolLoan[]
 
   @@index([status, openedAt])
   @@index([productId])
 }
 
-/// One print job's weigh-in. afterG is null while the job is running.
-model SpoolUsage {
-  id        String    @id @default(cuid())
-  spoolId   String
-  beforeG   Int
-  afterG    Int?
-  usedG     Int?
-  /// Slicer estimate, to compare with what was actually used.
-  slicerG   Int?
-  jobRef    String?
-  costSgd   Decimal?  @db.Decimal(12, 2)
-  note      String?
-  startedAt DateTime  @default(now())
-  endedAt   DateTime?
+/// filament2go: a customer takes a spool (weighed out), brings it back (weighed in) and pays for the grams used.
+/// afterG is null while the spool is with the customer.
+model SpoolLoan {
+  id           String    @id @default(cuid())
+  spoolId      String
+  customerName String
+  phone        String?
+  note         String?
+  beforeG      Int
+  afterG       Int?
+  usedG        Int?
+  /// Price per kg agreed when the spool went out.
+  ratePerKgSgd Decimal   @db.Decimal(12, 2)
+  /// What the customer pays: usedG × ratePerKgSgd.
+  chargeSgd    Decimal?  @db.Decimal(12, 2)
+  /// Our filament cost for usedG, for profit.
+  costSgd      Decimal?  @db.Decimal(12, 2)
+  lentAt       DateTime  @default(now())
+  returnedAt   DateTime?
+  paidAt       DateTime?
 
   spool Spool @relation(fields: [spoolId], references: [id], onDelete: Cascade)
 
-  @@index([spoolId, startedAt])
-  @@index([endedAt])
+  @@index([spoolId, lentAt])
+  @@index([returnedAt])
+  @@index([paidAt])
 }
 
 model User {

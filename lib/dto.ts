@@ -1,6 +1,6 @@
 import "server-only";
 import type { Prisma } from "@/lib/generated/prisma/client";
-import type { ProductDTO, PurchaseOrderDTO, SaleDTO, SpoolDTO, SpoolUsageDTO } from "@/lib/types";
+import type { ProductDTO, PurchaseOrderDTO, SaleDTO, SpoolDTO, SpoolLoanDTO } from "@/lib/types";
 
 type Dec = Prisma.Decimal | null;
 const num = (d: Dec) => (d === null ? null : Number(d));
@@ -95,21 +95,24 @@ export function toSale(s: Prisma.SaleGetPayload<{ include: typeof saleInclude }>
 
 export const spoolInclude = {
   product: { select: productSummarySelect },
-  usages: { where: { endedAt: null }, orderBy: { startedAt: "desc" }, take: 1 },
+  loans: { where: { returnedAt: null }, orderBy: { lentAt: "desc" }, take: 1 },
 } satisfies Prisma.SpoolInclude;
 
-export function toSpoolUsage(u: Prisma.SpoolUsageGetPayload<object>): SpoolUsageDTO {
+export function toSpoolLoan(l: Prisma.SpoolLoanGetPayload<object>): SpoolLoanDTO {
   return {
-    id: u.id,
-    beforeG: u.beforeG,
-    afterG: u.afterG,
-    usedG: u.usedG,
-    slicerG: u.slicerG,
-    jobRef: u.jobRef,
-    costSgd: num(u.costSgd),
-    note: u.note,
-    startedAt: u.startedAt.toISOString(),
-    endedAt: u.endedAt?.toISOString() ?? null,
+    id: l.id,
+    customerName: l.customerName,
+    phone: l.phone,
+    note: l.note,
+    beforeG: l.beforeG,
+    afterG: l.afterG,
+    usedG: l.usedG,
+    ratePerKgSgd: Number(l.ratePerKgSgd),
+    chargeSgd: num(l.chargeSgd),
+    costSgd: num(l.costSgd),
+    lentAt: l.lentAt.toISOString(),
+    returnedAt: l.returnedAt?.toISOString() ?? null,
+    paidAt: l.paidAt?.toISOString() ?? null,
   };
 }
 
@@ -128,6 +131,6 @@ export function toSpool(s: Prisma.SpoolGetPayload<{ include: typeof spoolInclude
     openedAt: s.openedAt.toISOString(),
     emptiedAt: s.emptiedAt?.toISOString() ?? null,
     product: s.product,
-    running: s.usages[0] ? toSpoolUsage(s.usages[0]) : null,
+    lent: s.loans[0] ? toSpoolLoan(s.loans[0]) : null,
   };
 }

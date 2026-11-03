@@ -6,11 +6,11 @@ import {
   defaultDensity,
   filamentCost,
   gramsToMetres,
+  lendRatePerKg,
+  loanCharge,
   remainingG,
   remainingPct,
-  sameType,
   serialFromScan,
-  usage,
 } from "./spool";
 
 const bambuPla = { netG: 1000, tareG: 250, densityGcm3: 1.24 };
@@ -93,17 +93,27 @@ describe("checkWeighOut", () => {
   });
 });
 
-describe("usage", () => {
-  it("compares with the slicer estimate", () => {
-    expect(usage(900, 780, 110)).toEqual({ usedG: 120, overG: 10 });
-    expect(usage(900, 780)).toEqual({ usedG: 120, overG: null });
+describe("lendRatePerKg", () => {
+  it("uses the set lend price when there is one", () => {
+    expect(lendRatePerKg(40, 25, 1000)).toBe(40);
+    expect(lendRatePerKg(0, 25, 1000)).toBe(0);
+  });
+
+  it("otherwise marks up the roll's sell price per kg", () => {
+    // S$25 per 1 kg roll → S$32.50 / kg lent; a 750 g roll at S$25 is S$33.33 / kg → S$43.33.
+    expect(lendRatePerKg(null, 25, 1000)).toBe(32.5);
+    expect(lendRatePerKg(null, 25, 750)).toBe(43.33);
   });
 });
 
-describe("sameType", () => {
-  it("ignores case and spacing only", () => {
-    expect(sameType("PLA  basic", "PLA Basic")).toBe(true);
-    expect(sameType("PLA Basic", "PETG")).toBe(false);
+describe("loanCharge", () => {
+  it("charges the grams used at the per-kg rate", () => {
+    expect(loanCharge(122, 32.5)).toBe(3.97);
+    expect(loanCharge(0, 32.5)).toBe(0);
+  });
+
+  it("never charges a negative amount", () => {
+    expect(loanCharge(-5, 32.5)).toBe(0);
   });
 });
 

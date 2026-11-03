@@ -10,13 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/db";
-import { spoolInclude, toSpool, toSpoolUsage } from "@/lib/dto";
+import { spoolInclude, toSpool, toSpoolLoan } from "@/lib/dto";
 import { formatDate, formatDateTime, formatSGD } from "@/lib/money";
 import { filamentCost, gramsToMetres, remainingG } from "@/lib/spool";
-import { getCatalog } from "@/lib/catalog";
-import { spoolQr } from "@/lib/spools";
-import { cn } from "@/lib/utils";
-import { SpoolActions, WeighPanel } from "./weigh-panel";
+import { getLendRate, spoolQr } from "@/lib/spools";
+import { LoanPayment, SpoolActions, WeighPanel } from "./weigh-panel";
 
 type Props = { params: Promise<{ serial: string }> };
 
@@ -28,24 +26,28 @@ export default async function SpoolPage({ params }: Props) {
   const serial = decodeURIComponent((await params).serial).toUpperCase();
   const row = await prisma.spool.findUnique({ where: { serial }, include: spoolInclude });
   if (!row) notFound();
-  const [history, catalog, qr] = await Promise.all([
-    prisma.spoolUsage.findMany({ where: { spoolId: row.id, endedAt: { not: null } }, orderBy: { endedAt: "desc" } }),
-    getCatalog(),
+  const [history, ratePerKg, qr] = await Promise.all([
+    prisma.spoolLoan.findMany({ where: { spoolId: row.id, returnedAt: { not: null } }, orderBy: { returnedAt: "desc" } }),
+    getLendRate(row),
     spoolQr(serial),
   ]);
   const s = toSpool(row);
-  const usages = history.map(toSpoolUsage);
+  const loans = history.map(toSpoolLoan);
+  const proxy = process.env.PAYNOW_PROXY?.trim();
+  const paynow = proxy ? { proxy, name: process.env.PAYNOW_NAME?.trim() || "NA" } : null;
 
   const left = remainingG(s, s.lastGrossG);
-  const usedG = usages.reduce((sum, u) => sum + (u.usedG ?? 0), 0);
-  // Filament gone that no job accounts for: purges, failed prints nobody logged, scale drift.
+  const usedG = loans.reduce((sum, l) => sum + (l.usedG ?? 0), 0);
+  const billed = loans.reduce((sum, l) => sum + (l.chargeSgd ?? 0), 0);
+  const unpaid = loans.reduce((sum, l) => sum + (l.paidAt ? 0 : (l.chargeSgd ?? 0)), 0);
+  // Filament gone that no loan accounts for: scale drift, filament used in the shop.
   const unloggedG = Math.max(0, s.startGrossG - s.lastGrossG - usedG);
   const stats = [
     { label: "Left", value: `${left} g`, hint: `≈ ${Math.round(gramsToMetres(left, s.densityGcm3))} m` },
-    { label: "Used by jobs", value: `${usedG} g`, hint: `${usages.length} job${usages.length === 1 ? "" : "s"}` },
-    { label: "Not logged", value: `${unloggedG} g`, hint: "purge / failed prints" },
-    { label: "Filament cost", value: `${formatSGD(filamentCost(1000, s.unitCostSgd, s.netG))}/kg`, hint: `roll ${formatSGD(s.unitCostSgd)}` },
-    { label: "Reel / full roll", value: `${s.tareG} / ${s.netG} g`, hint: `density ${s.densityGcm3}` },
+    { label: "Used by customers", value: `${usedG} g`, hint: `${loans.length} loan${loans.length === 1 ? "" : "s"}` },
+    { label: "Billed", value: formatSGD(billed), hint: unpaid ? `${formatSGD(unpaid)} unpaid` : "all paid" },
+    { label: "Lend price", value: `${formatSGD(ratePerKg)}/kg`, hint: `cost ${formatSGD(filamentCost(1000, s.unitCostSgd, s.netG))}/kg` },
+    { label: "Not logged", value: `${unloggedG} g`, hint: `reel ${s.tareG} g · roll ${s.netG} g` },
   ];
 
   return (
@@ -86,7 +88,7 @@ export default async function SpoolPage({ params }: Props) {
               ))}
             </div>
           </Card>
-          {s.status === "OPEN" && <WeighPanel spool={s} types={catalog.types} />}
+          {s.status === "OPEN" && <WeighPanel spool={s} ratePerKg={ratePerKg} paynow={paynow} />}
         </div>
 
         <Card className="items-center gap-2 px-4 py-4 text-center">
@@ -101,53 +103,48 @@ export default async function SpoolPage({ params }: Props) {
 
       <Card className="gap-2">
         <CardHeader>
-          <CardTitle>Jobs</CardTitle>
+          <CardTitle>Loans</CardTitle>
         </CardHeader>
         <CardContent className="px-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Finished</TableHead>
-                <TableHead>Job</TableHead>
-                <TableHead className="text-right">Before → after</TableHead>
+                <TableHead className="pl-6">Returned</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">Out → back</TableHead>
                 <TableHead className="text-right">Used</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">vs slicer</TableHead>
-                <TableHead className="pr-6 text-right">Cost</TableHead>
+                <TableHead className="text-right">Charge</TableHead>
+                <TableHead className="pr-6 text-right">Payment</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {usages.length === 0 && (
+              {loans.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
-                    No jobs weighed out yet
+                    Not lent out yet
                   </TableCell>
                 </TableRow>
               )}
-              {usages.map((u) => {
-                const over = u.slicerG == null || u.usedG == null ? null : u.usedG - u.slicerG;
-                return (
-                  <TableRow key={u.id}>
-                    <TableCell className="pl-6 whitespace-nowrap text-muted-foreground">{formatDateTime(u.endedAt)}</TableCell>
-                    <TableCell className="max-w-52">
-                      <div className="truncate font-medium">{u.jobRef ?? "—"}</div>
-                      {u.note && <div className="truncate text-xs text-muted-foreground">{u.note}</div>}
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap text-muted-foreground tabular-nums">
-                      {u.beforeG} → {u.afterG}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">{u.usedG} g</TableCell>
-                    <TableCell
-                      className={cn(
-                        "hidden text-right tabular-nums sm:table-cell",
-                        over != null && over > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground",
-                      )}
-                    >
-                      {over == null ? "—" : `${over > 0 ? "+" : ""}${over} g`}
-                    </TableCell>
-                    <TableCell className="pr-6 text-right tabular-nums">{formatSGD(u.costSgd)}</TableCell>
-                  </TableRow>
-                );
-              })}
+              {loans.map((l) => (
+                <TableRow key={l.id}>
+                  <TableCell className="pl-6 whitespace-nowrap text-muted-foreground">{formatDateTime(l.returnedAt)}</TableCell>
+                  <TableCell className="max-w-52">
+                    <div className="truncate font-medium">{l.customerName}</div>
+                    <div className="truncate text-xs text-muted-foreground">{[l.phone, l.note].filter(Boolean).join(" · ")}</div>
+                  </TableCell>
+                  <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums sm:table-cell">
+                    {l.beforeG} → {l.afterG}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">{l.usedG} g</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatSGD(l.chargeSgd)}
+                    <div className="text-xs text-muted-foreground">{formatSGD(l.ratePerKgSgd)}/kg</div>
+                  </TableCell>
+                  <TableCell className="pr-6 text-right">
+                    <LoanPayment loan={l} serial={s.serial} paynow={paynow} />
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>

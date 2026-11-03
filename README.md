@@ -7,8 +7,8 @@ Filament store. The customer-facing store is not built yet; everything lives in 
 - **Purchase orders**: record supplier orders in SGD or THB, mark shipped, receive into stock.
 - **POS**: sell or reserve rolls; reservations hold stock until picked up or cancelled.
 - **Sales & reservations**: complete / cancel reservations, void sales.
-- **Spools** (print service, filament2go): rolls opened for printing, each with a serial and a QR label.
-  Scan a spool, weigh it before the print and again after; the difference is the filament used and its cost.
+- **filament2go**: spools lent to customers, each with a serial and a QR label. Weigh a spool when the customer
+  takes it (name, phone, note) and when they bring it back; they pay for the grams used, by PayNow QR.
 - **Users**: accounts are stored in the database with a role, `USER` (default) or `ADMIN`.
   Only admins can sign in to the backstore; an admin can add accounts and promote or demote other users.
 
@@ -31,19 +31,22 @@ Each product's **Cost** is a weighted average: received rolls are blended with t
 on hand. Sales snapshot that cost so profit stays correct later. The maths is in `lib/costing.ts`
 (tested in `lib/costing.test.ts`).
 
-## Spool weighing (filament2go)
+## filament2go (pay-as-you-use lending)
 
 Opening a spool takes one roll out of stock, weighs it full on its reel, and gives it a serial (`SP-YYMMDD-001`)
-whose QR label links to the spool's page. Every job is weighed in before printing and out afterwards:
+whose QR label links to the spool's page. Scan it to lend it: enter the customer and weigh it out. When it comes
+back, weigh it again; the customer pays for what they used and a PayNow QR for that amount pops up.
 
 ```
-used = before − after          left = last weight − empty reel
-cost = used × roll cost ÷ full-roll grams
+used   = weight out − weight back      left = last weight − empty reel
+charge = used × lend price per kg      (fixed when the spool goes out)
 ```
 
-Reels and filament differ, so each brand + type has its own empty-reel weight, full-roll grams and density
-(**Spools → Reel weights**), copied onto each spool when it is opened. A job can name the filament type it
-was sliced for; a spool of another type is refused. The maths is in `lib/spool.ts` (tested in `lib/spool.test.ts`).
+Pay-as-you-use costs more per gram than buying the roll: each brand + type can have its own lend price per kg
+(**filament2go → Reel weights**); if it's empty, it's the roll's sell price per kg × `LEND_MARKUP` (1.3).
+Reels and filament differ too, so each brand + type also has its own empty-reel weight, full-roll grams and
+density, copied onto each spool when it is opened. Returned loans stay in **Waiting for payment** until marked paid.
+The maths is in `lib/spool.ts` (tested in `lib/spool.test.ts`).
 
 ## Getting started
 
@@ -84,7 +87,7 @@ app/backstore/(app)/        dashboard, stock, orders, pos, sales, spools (+ each
 components/backstore/       shared backstore UI (dialogs, cost breakdown, nav)
 components/brand/logo.tsx   logo mark + wordmark
 lib/costing.ts              landed-cost and weighted-average maths
-lib/spool.ts                spool weighing maths (remaining, used, cost, checks)
+lib/spool.ts                filament2go maths (remaining, used, lend price, checks)
 lib/db.ts                   Prisma client
 lib/auth.ts                 current user + requireAdmin() guard used by every backstore page/action
 proxy.ts                    redirects signed-out visitors to /backstore/login

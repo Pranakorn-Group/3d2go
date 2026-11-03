@@ -6,17 +6,8 @@ import { run, UserError } from "@/lib/action";
 import { requireAdmin } from "@/lib/auth";
 import { nextSpoolSerial } from "@/lib/codes";
 import { prisma } from "@/lib/db";
-import {
-  checkOpening,
-  checkWeighIn,
-  checkWeighOut,
-  EMPTY_AT_G,
-  filamentCost,
-  remainingG,
-  sameType,
-  serialFromScan,
-  usage,
-} from "@/lib/spool";
+import { checkOpening, checkWeighIn, checkWeighOut, EMPTY_AT_G, filamentCost, loanCharge, remainingG, serialFromScan } from "@/lib/spool";
+import { getLendRate } from "@/lib/spools";
 
 const optionalText = z
   .string()
@@ -36,9 +27,14 @@ const specSchema = z.object({
 const saveSpecSchema = specSchema.extend({
   brand: z.string().trim().min(1),
   type: z.string().trim().min(1),
+  /** Empty = sell price per kg × LEND_MARKUP. */
+  lendPerKgSgd: z
+    .union([z.literal("").transform(() => null), z.coerce.number().min(0, "Price can't be negative")])
+    .nullable()
+    .optional(),
 });
 
-/** Sets the net / reel weight and density used for new spools of one brand + type. */
+/** Sets the net / reel weight, density and lend price used for spools of one brand + type. */
 export async function saveSpoolSpec(input: z.input<typeof saveSpecSchema>) {
   return run(async () => {
     await requireAdmin();
@@ -58,7 +54,7 @@ const openSchema = specSchema.extend({
   note: optionalText,
 });
 
-/** Opens a roll for printing: weighs it in, gives it a serial (for its QR label) and takes it out of stock. */
+/** Opens a roll for lending: weighs it, gives it a serial (for its QR label) and takes it out of stock. */
 export async function openSpool(input: z.input<typeof openSchema>) {
   return run(async () => {
     await requireAdmin();
@@ -117,35 +113,32 @@ export async function findSpool(text: string) {
   });
 }
 
-const startSchema = z.object({
+const lendSchema = z.object({
   spoolId: z.string(),
-  beforeG: grams("Before weight"),
-  slicerG: grams("Slicer estimate").nullable().optional(),
-  jobRef: optionalText,
-  /** The filament type the job was sliced for; must match the spool's. */
-  jobType: optionalText,
+  customerName: z.string().trim().min(1, "Customer name is required").max(80),
+  phone: optionalText,
   note: optionalText,
+  beforeG: grams("Weight"),
 });
 
-/** Weigh-in before a print. The job stays open until it is weighed out. */
-export async function startJob(input: z.input<typeof startSchema>) {
+/** filament2go: a customer takes the spool. Weighs it out and fixes today's price per kg for this loan. */
+export async function lendSpool(input: z.input<typeof lendSchema>) {
   return run(async () => {
     await requireAdmin();
-    const { spoolId, beforeG, slicerG, jobRef, jobType, note } = startSchema.parse(input);
+    const { spoolId, beforeG, ...customer } = lendSchema.parse(input);
 
     await prisma.$transaction(async (tx) => {
-      const s = await tx.spool.findUniqueOrThrow({ where: { id: spoolId }, include: { product: true } });
+      const s = await tx.spool.findUniqueOrThrow({ where: { id: spoolId } });
       if (s.status === "EMPTY") throw new UserError(`${s.serial} is marked empty`);
-      if (jobType && !sameType(jobType, s.product.type))
-        throw new UserError(`${s.serial} is ${s.product.type}, but the job needs ${jobType} — use a ${jobType} spool`);
-      const running = await tx.spoolUsage.findFirst({ where: { spoolId, endedAt: null } });
-      if (running) throw new UserError(`${s.serial} already has a job on the printer — weigh it out first`);
+      const out = await tx.spoolLoan.findFirst({ where: { spoolId, returnedAt: null } });
+      if (out) throw new UserError(`${s.serial} is already with ${out.customerName} — take it back first`);
 
       const problem = checkWeighIn({ ...s, densityGcm3: Number(s.densityGcm3) }, beforeG);
       if (problem) throw new UserError(problem);
 
-      await tx.spoolUsage.create({ data: { spoolId, beforeG, slicerG, jobRef, note } });
-      // A lighter reading than last time is filament nobody logged (e.g. purge, a failed print).
+      const ratePerKgSgd = await getLendRate(s, tx);
+      await tx.spoolLoan.create({ data: { spoolId, beforeG, ratePerKgSgd, ...customer } });
+      // A lighter reading than last time is filament nobody logged (e.g. scale drift, a purge in the shop).
       await tx.spool.update({ where: { id: spoolId }, data: { lastGrossG: beforeG } });
     });
 
@@ -153,34 +146,45 @@ export async function startJob(input: z.input<typeof startSchema>) {
   });
 }
 
-const finishSchema = z.object({
-  usageId: z.string(),
-  afterG: grams("After weight"),
+const returnSchema = z.object({
+  loanId: z.string(),
+  afterG: grams("Weight"),
   note: optionalText,
 });
 
-/** Weigh-out after a print: records grams used and their cost. Returns what is left on the spool. */
-export async function finishJob(input: z.input<typeof finishSchema>) {
+/** The customer brings the spool back: weighs it in and works out what they pay (shown as a PayNow QR). */
+export async function returnSpool(input: z.input<typeof returnSchema>) {
   return run(async () => {
     await requireAdmin();
-    const { usageId, afterG, note } = finishSchema.parse(input);
+    const { loanId, afterG, note } = returnSchema.parse(input);
 
     const result = await prisma.$transaction(async (tx) => {
-      const u = await tx.spoolUsage.findUniqueOrThrow({ where: { id: usageId }, include: { spool: true } });
-      if (u.endedAt) throw new UserError("This job was already weighed out");
-      const s = u.spool;
-      const problem = checkWeighOut(s, u.beforeG, afterG);
+      const l = await tx.spoolLoan.findUniqueOrThrow({ where: { id: loanId }, include: { spool: true } });
+      if (l.returnedAt) throw new UserError("This spool was already returned");
+      const s = l.spool;
+      const problem = checkWeighOut(s, l.beforeG, afterG);
       if (problem) throw new UserError(problem);
 
-      const { usedG, overG } = usage(u.beforeG, afterG, u.slicerG);
+      const usedG = l.beforeG - afterG;
+      const chargeSgd = loanCharge(usedG, Number(l.ratePerKgSgd));
       const costSgd = filamentCost(usedG, Number(s.unitCostSgd), s.netG);
-      await tx.spoolUsage.update({
-        where: { id: usageId },
-        data: { afterG, usedG, costSgd, endedAt: new Date(), note: note ?? u.note },
+      // Nothing used → nothing to pay, so the loan is settled straight away.
+      const now = new Date();
+      await tx.spoolLoan.update({
+        where: { id: loanId },
+        data: { afterG, usedG, chargeSgd, costSgd, returnedAt: now, paidAt: chargeSgd > 0 ? null : now, note: note ?? l.note },
       });
       await tx.spool.update({ where: { id: s.id }, data: { lastGrossG: afterG } });
       const left = remainingG(s, afterG);
-      return { usedG, overG, costSgd, remainingG: left, nearlyEmpty: left <= EMPTY_AT_G };
+      return {
+        loanId,
+        serial: s.serial,
+        customerName: l.customerName,
+        usedG,
+        chargeSgd,
+        remainingG: left,
+        nearlyEmpty: left <= EMPTY_AT_G,
+      };
     });
 
     revalidatePath("/backstore/spools", "layout");
@@ -188,13 +192,24 @@ export async function finishJob(input: z.input<typeof finishSchema>) {
   });
 }
 
-/** Drops a weigh-in that was a mistake (the job never ran). */
-export async function cancelJob(usageId: string) {
+/** Drops a loan that was a mistake (the spool never left the shop). */
+export async function cancelLoan(loanId: string) {
   return run(async () => {
     await requireAdmin();
-    const u = await prisma.spoolUsage.findUniqueOrThrow({ where: { id: usageId } });
-    if (u.endedAt) throw new UserError("This job was already weighed out");
-    await prisma.spoolUsage.delete({ where: { id: usageId } });
+    const l = await prisma.spoolLoan.findUniqueOrThrow({ where: { id: loanId } });
+    if (l.returnedAt) throw new UserError("This spool was already returned");
+    await prisma.spoolLoan.delete({ where: { id: loanId } });
+    revalidatePath("/backstore/spools", "layout");
+  });
+}
+
+/** Records (or un-records) the customer's payment for a returned spool. */
+export async function setLoanPaid(loanId: string, paid: boolean) {
+  return run(async () => {
+    await requireAdmin();
+    const l = await prisma.spoolLoan.findUniqueOrThrow({ where: { id: loanId } });
+    if (!l.returnedAt) throw new UserError("Take the spool back first");
+    await prisma.spoolLoan.update({ where: { id: loanId }, data: { paidAt: paid ? new Date() : null } });
     revalidatePath("/backstore/spools", "layout");
   });
 }
@@ -203,8 +218,8 @@ export async function cancelJob(usageId: string) {
 export async function setSpoolEmpty(id: string, empty: boolean) {
   return run(async () => {
     await requireAdmin();
-    if (empty && (await prisma.spoolUsage.count({ where: { spoolId: id, endedAt: null } })))
-      throw new UserError("Weigh out the running job first");
+    if (empty && (await prisma.spoolLoan.count({ where: { spoolId: id, returnedAt: null } })))
+      throw new UserError("The spool is still with a customer — take it back first");
     await prisma.spool.update({
       where: { id },
       data: empty ? { status: "EMPTY", emptiedAt: new Date() } : { status: "OPEN", emptiedAt: null },

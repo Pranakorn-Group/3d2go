@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { gramsToMetres } from "@/lib/spool";
+import { gramsToMetres, LEND_MARKUP } from "@/lib/spool";
 import type { SpoolSpecDTO } from "@/lib/types";
 import { saveSpoolSpec } from "../actions";
 
@@ -17,19 +17,26 @@ function SpecRow({ spec }: { spec: SpoolSpecDTO }) {
   const [netG, setNetG] = useState(String(spec.netG));
   const [tareG, setTareG] = useState(spec.saved ? String(spec.tareG) : "");
   const [density, setDensity] = useState(String(spec.densityGcm3));
+  const savedLend = spec.lendPerKgSgd == null ? "" : String(spec.lendPerKgSgd);
+  const [lend, setLend] = useState(savedLend);
   const [pending, startTransition] = useTransition();
-  const dirty = !spec.saved || netG !== String(spec.netG) || tareG !== String(spec.tareG) || density !== String(spec.densityGcm3);
+  const dirty =
+    !spec.saved ||
+    netG !== String(spec.netG) ||
+    tareG !== String(spec.tareG) ||
+    density !== String(spec.densityGcm3) ||
+    lend !== savedLend;
 
   function save(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
-      const res = await saveSpoolSpec({ brand: spec.brand, type: spec.type, netG, tareG, densityGcm3: density });
+      const res = await saveSpoolSpec({ brand: spec.brand, type: spec.type, netG, tareG, densityGcm3: density, lendPerKgSgd: lend });
       if (!res.ok) return void toast.error(res.error);
       toast.success(`Saved ${spec.brand} ${spec.type}`);
     });
   }
 
-  const input = (value: string, set: (v: string) => void, label: string, step = "1") => (
+  const input = (value: string, set: (v: string) => void, label: string, step = "1", required = true) => (
     <Input
       type="number"
       inputMode="decimal"
@@ -40,7 +47,8 @@ function SpecRow({ spec }: { spec: SpoolSpecDTO }) {
       aria-label={`${label} for ${spec.brand} ${spec.type}`}
       className="w-24 tabular-nums"
       form={`spec-${spec.brand}-${spec.type}`}
-      required
+      required={required}
+      placeholder={required ? undefined : "Auto"}
     />
   );
 
@@ -55,6 +63,7 @@ function SpecRow({ spec }: { spec: SpoolSpecDTO }) {
       <TableCell>{input(tareG, setTareG, "Empty reel")}</TableCell>
       <TableCell>{input(netG, setNetG, "Full roll")}</TableCell>
       <TableCell>{input(density, setDensity, "Density", "0.01")}</TableCell>
+      <TableCell>{input(lend, setLend, "Lend price per kg", "0.01", false)}</TableCell>
       <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">
         ≈ {Math.round(gramsToMetres(Number(netG), Number(density)))} m
       </TableCell>
@@ -80,6 +89,7 @@ export function SpecsView({ specs }: { specs: SpoolSpecDTO[] }) {
             <TableHead>Empty reel (g)</TableHead>
             <TableHead>Full roll (g)</TableHead>
             <TableHead>Density (g/cm³)</TableHead>
+            <TableHead title={`Empty = roll sell price per kg × ${LEND_MARKUP}`}>Lend S$/kg</TableHead>
             <TableHead className="hidden md:table-cell">Length (1.75 mm)</TableHead>
             <TableHead className="pr-4" />
           </TableRow>

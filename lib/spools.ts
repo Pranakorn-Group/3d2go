@@ -2,7 +2,8 @@ import "server-only";
 import { headers } from "next/headers";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/db";
-import { defaultDensity } from "@/lib/spool";
+import type { Prisma } from "@/lib/generated/prisma/client";
+import { defaultDensity, lendRatePerKg } from "@/lib/spool";
 import type { SpoolSpecDTO } from "@/lib/types";
 
 export const specKey = (brand: string, type: string) => `${brand}\u0000${type}`;
@@ -18,9 +19,17 @@ export async function getSpoolSpecs(): Promise<Record<string, SpoolSpecDTO>> {
   ]);
   const specs: Record<string, SpoolSpecDTO> = {};
   for (const { brand, type } of combos)
-    specs[specKey(brand, type)] = { brand, type, netG: 1000, tareG: 0, densityGcm3: defaultDensity(type), saved: false };
+    specs[specKey(brand, type)] = { brand, type, netG: 1000, tareG: 0, densityGcm3: defaultDensity(type), lendPerKgSgd: null, saved: false };
   for (const s of saved)
-    specs[specKey(s.brand, s.type)] = { brand: s.brand, type: s.type, netG: s.netG, tareG: s.tareG, densityGcm3: Number(s.densityGcm3), saved: true };
+    specs[specKey(s.brand, s.type)] = {
+      brand: s.brand,
+      type: s.type,
+      netG: s.netG,
+      tareG: s.tareG,
+      densityGcm3: Number(s.densityGcm3),
+      lendPerKgSgd: s.lendPerKgSgd === null ? null : Number(s.lendPerKgSgd),
+      saved: true,
+    };
   return specs;
 }
 
@@ -31,4 +40,12 @@ export async function spoolQr(serial: string) {
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const svg = await QRCode.toString(`${proto}://${host}/backstore/spools/${serial}`, { type: "svg", errorCorrectionLevel: "M", margin: 1 });
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/** Today's lend price per kg for a spool (its brand + type's set price, or the marked-up roll price). */
+export async function getLendRate(spool: { productId: string; netG: number }, tx: Prisma.TransactionClient = prisma) {
+  const product = await tx.product.findUniqueOrThrow({ where: { id: spool.productId }, select: { brand: true, type: true, sellPriceSgd: true } });
+  const spec = await tx.spoolSpec.findUnique({ where: { brand_type: { brand: product.brand, type: product.type } } });
+  const set = spec?.lendPerKgSgd;
+  return lendRatePerKg(set == null ? null : Number(set), Number(product.sellPriceSgd), spool.netG);
 }

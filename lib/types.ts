@@ -77,17 +77,20 @@ export const available = (p: Pick<ProductDTO, "stockQty" | "reservedQty">) => p.
 
 export type SpoolStatus = "OPEN" | "EMPTY";
 
-export type SpoolUsageDTO = {
+export type SpoolLoanDTO = {
   id: string;
+  customerName: string;
+  phone: string | null;
+  note: string | null;
   beforeG: number;
   afterG: number | null;
   usedG: number | null;
-  slicerG: number | null;
-  jobRef: string | null;
+  ratePerKgSgd: number;
+  chargeSgd: number | null;
   costSgd: number | null;
-  note: string | null;
-  startedAt: string;
-  endedAt: string | null;
+  lentAt: string;
+  returnedAt: string | null;
+  paidAt: string | null;
 };
 
 export type SpoolDTO = {
@@ -104,8 +107,17 @@ export type SpoolDTO = {
   openedAt: string;
   emptiedAt: string | null;
   product: Pick<ProductDTO, "id" | "brand" | "type" | "color" | "colorHex" | "sku">;
-  /** The job currently on the printer (weighed in, not yet weighed out). */
-  running: SpoolUsageDTO | null;
+  /** The loan while a customer has the spool (weighed out, not yet back). */
+  lent: SpoolLoanDTO | null;
 };
 
-export type SpoolSpecDTO = { brand: string; type: string; netG: number; tareG: number; densityGcm3: number; saved: boolean };
+export type SpoolSpecDTO = {
+  brand: string;
+  type: string;
+  netG: number;
+  tareG: number;
+  densityGcm3: number;
+  /** Set lend price per kg; null = sell price per kg × LEND_MARKUP. */
+  lendPerKgSgd: number | null;
+  saved: boolean;
+};
