@@ -66,14 +66,15 @@ export function BulkEditDialog({
 }) {
   const [selected, setSelected] = useState(() => new Set(products.map((p) => p.id)));
   const [form, setForm] = useState<Form>(() => initial(products));
-  const [enabled, setEnabled] = useState<Record<Key, boolean>>({
-    sellPriceSgd: true,
+  // Price starts ticked only when every color shares one: a ticked "Mixed" (blank) price blocks saving.
+  const [enabled, setEnabled] = useState<Record<Key, boolean>>(() => ({
+    sellPriceSgd: form.sellPriceSgd !== "",
     lowStockAt: false,
     weightG: false,
     printTemp: false,
     refUrl: false,
     note: false,
-  });
+  }));
   const [pending, startTransition] = useTransition();
 
   const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -138,6 +139,9 @@ export function BulkEditDialog({
                   value={form.sellPriceSgd}
                   onChange={set("sellPriceSgd")}
                 />
+                {enabled.sellPriceSgd && form.sellPriceSgd === "" && (
+                  <FieldDescription className="text-destructive">Colors have different prices — enter one or untick.</FieldDescription>
+                )}
               </Field>
               <Field>
                 <div className="flex items-center gap-2">

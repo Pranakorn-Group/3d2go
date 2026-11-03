@@ -1,4 +1,4 @@
-import { makeSku, uniqueSku } from "./sku";
+import { makeSku, type SkuCodes } from "./sku";
 
 // Bulk add: one row = one color. Brand, type, price, qty, cost and note are shared by every row.
 
@@ -26,10 +26,11 @@ export function parsePastedColors(text: string): BulkColor[] {
 
 /**
  * Validates the color rows and generates SKUs. Blank rows are skipped; `line` is the 1-based row number.
- * A generated SKU that is already in the system (`taken`) or used by an earlier row gets a "-2", "-3", … suffix.
+ * A generated SKU already in the system (`taken`) or used by an earlier row takes the next free color code.
  */
 export function buildBulkRows(
   colors: BulkColor[],
+  codes: SkuCodes,
   brand: string,
   type: string,
   taken: Iterable<string> = [],
@@ -54,7 +55,7 @@ export function buildBulkRows(
     if (names.has(name)) return void errors.push({ line, message: `"${color}" is already in an earlier row` });
     names.add(name);
 
-    const sku = uniqueSku(makeSku(brand, type, color), skus);
+    const sku = makeSku(codes, brand, type, color, skus);
     skus.add(sku);
 
     rows.push({ line, color, colorHex, sku });

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransiti
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import toast from "react-hot-toast";
-import { BookmarkPlus, Minus, PackageCheck, Plus, QrCode, ScanLine, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { BookmarkPlus, CircleAlert, CircleCheck, Minus, PackageCheck, Plus, QrCode, ScanLine, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { createSale } from "@/app/backstore/(app)/sales/actions";
 import { lookupLabel } from "@/app/backstore/(app)/stock/labels/actions";
 import { ColorSwatch } from "@/components/backstore/color-swatch";
@@ -30,6 +30,8 @@ type Mode = "sell" | "reserve";
 /** `serials`: roll labels scanned for this line — at most qty; the rest of the rolls were tapped in. */
 type CartLine = { productId: string; qty: number; unitPrice: string; serials: string[] };
 type Group = { key: string; items: ProductDTO[] };
+/** What the last scan did, shown in the scan dialog. `n` restarts its flash on every scan. */
+type ScanResult = { n: number; ok: true; product: ProductDTO; serial: string } | { n: number; ok: false; error: string };
 
 const groupKey = (p: ProductDTO) => `${p.brand} ${p.type}`;
 const noop = () => () => {};
@@ -92,6 +94,7 @@ export function PosView({
   const [qr, setQr] = useState<PayNowRequest | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanning, startScanning] = useTransition();
+  const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [pending, startTransition] = useTransition();
   const mounted = useMounted();
 
@@ -140,17 +143,25 @@ export function PosView({
 
   /** A scanned roll label: fills a tapped-in roll of that color without a label yet, else adds one more. */
   function scan(text: string) {
-    const serial = text.trim().toUpperCase();
+    let serial = text.trim().toUpperCase();
     if (!serial) return;
-    if (cart.some((l) => l.serials.includes(serial))) return void toast.error(`${serial} is already in the cart`);
+    // With the scan dialog open its banner says what happened; a toast would only cover it.
+    const fail = (error: string) => {
+      setLastScan((s) => ({ n: (s?.n ?? 0) + 1, ok: false, error }));
+      if (!scanOpen) toast.error(error, { id: "scan" });
+    };
+    if (cart.some((l) => l.serials.includes(serial))) return fail(`${serial} is already in the cart`);
     startScanning(async () => {
       const res = await lookupLabel(serial);
-      if (!res.ok) return void toast.error(res.error);
+      if (!res.ok) return fail(res.error);
+      // The canonical serial (a typed "o" is a zero), which is what the cart and the sale keep.
+      serial = res.data.serial;
+      if (cart.some((l) => l.serials.includes(serial))) return fail(`${serial} is already in the cart`);
       const p = byId.get(res.data.productId);
-      if (!p) return void toast.error(`${serial}: that filament isn't on sale (archived?)`);
+      if (!p) return fail(`${serial}: that filament isn't on sale (archived?)`);
       const line = cart.find((l) => l.productId === p.id);
       const fills = !!line && line.serials.length < line.qty;
-      if (!fills && inCart(p.id) >= available(p)) return void toast.error(`${serial}: only ${available(p)} ${p.color} in stock`);
+      if (!fills && inCart(p.id) >= available(p)) return fail(`${serial}: only ${available(p)} ${p.color} in stock`);
       setCart((c) =>
         c.some((l) => l.productId === p.id)
           ? c.map((l) =>
@@ -160,7 +171,8 @@ export function PosView({
             )
           : [...c, { productId: p.id, qty: 1, unitPrice: String(p.sellPriceSgd), serials: [serial] }],
       );
-      toast.success(`${p.brand} ${p.type} · ${p.color}`, { id: "scan" });
+      setLastScan((s) => ({ n: (s?.n ?? 0) + 1, ok: true, product: p, serial }));
+      if (!scanOpen) toast.success(`${p.brand} ${p.type} · ${p.color}`, { id: "scan" });
       setQ("");
     });
   }
@@ -179,6 +191,12 @@ export function PosView({
     setCart((c) =>
       qty <= 0 ? c.filter((l) => l.productId !== id) : c.map((l) => (l.productId === id ? { ...l, qty, serials: l.serials.slice(0, qty) } : l)),
     );
+  }
+
+  /** From the scan dialog to the cart: the side panel on a wide screen, the cart sheet on a phone. */
+  function toCart() {
+    setScanOpen(false);
+    if (!window.matchMedia("(min-width: 64rem)").matches) setSheetOpen(true);
   }
 
   function reset() {
@@ -293,7 +311,7 @@ export function PosView({
                     <div className="flex flex-wrap gap-1 pl-7">
                       {l.serials.map((serial) => (
                         <span key={serial} className="flex items-center gap-0.5 rounded bg-muted py-0.5 pr-0.5 pl-1.5 font-mono text-[11px] text-muted-foreground">
-                          {serial.slice(p.sku.length + 1) || serial}
+                          {serial}
                           <button type="button" aria-label={`Remove ${serial}`} title={serial} onClick={() => removeSerial(p.id, serial)} className="rounded p-0.5 hover:bg-background hover:text-foreground">
                             <X className="size-3" />
                           </button>
@@ -374,7 +392,15 @@ export function PosView({
       <div className="min-w-0">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">POS</h1>
-          <Button variant="outline" className="ml-auto" onClick={() => setScanOpen(true)} title="Scan roll labels with the camera — a USB scanner works anytime">
+          <Button
+            variant="outline"
+            className="ml-auto"
+            onClick={() => {
+              setLastScan(null);
+              setScanOpen(true);
+            }}
+            title="Scan roll labels with the camera — a USB scanner works anytime"
+          >
             <ScanLine /> Scan
           </Button>
           <Button
@@ -540,10 +566,49 @@ export function PosView({
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Scan roll labels</DialogTitle>
-            <DialogDescription>Each label adds its roll to the cart. Keep scanning, then close.</DialogDescription>
+            <DialogDescription>Each label adds its roll to the cart. Keep scanning, then check out.</DialogDescription>
           </DialogHeader>
           {scanOpen && <QrScanner onScan={scan} paused={scanning} />}
-          <p className="text-center text-sm text-muted-foreground">{rolls(count)} in the cart</p>
+          <div aria-live="polite" className="min-h-14">
+            {lastScan ? (
+              <motion.div
+                key={lastScan.n}
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm",
+                  lastScan.ok
+                    ? "border-success/40 bg-success/15 text-emerald-800 dark:text-emerald-200"
+                    : "border-destructive/40 bg-destructive/10 text-destructive",
+                )}
+              >
+                {lastScan.ok ? <CircleCheck className="size-5 shrink-0" /> : <CircleAlert className="size-5 shrink-0" />}
+                {lastScan.ok ? (
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">Added to cart</div>
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <ColorSwatch hex={lastScan.product.colorHex} className="size-3" />
+                      <span className="truncate">
+                        {lastScan.product.brand} {lastScan.product.type} · {lastScan.product.color}
+                      </span>
+                      <span className="ml-auto font-mono opacity-70">{lastScan.serial}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="min-w-0 flex-1">{lastScan.error}</span>
+                )}
+              </motion.div>
+            ) : (
+              <p className="flex h-14 items-center justify-center text-sm text-muted-foreground">Point the camera at a roll label</p>
+            )}
+          </div>
+          <Button size="lg" disabled={!count} onClick={toCart} className="justify-between">
+            <span className="flex items-center gap-2">
+              <ShoppingCart /> Checkout · {rolls(count)}
+            </span>
+            <span className="tabular-nums">{formatSGD(total)}</span>
+          </Button>
         </DialogContent>
       </Dialog>
       {paynow && <PayNowDialog config={paynow} request={qr} onOpenChange={(o) => !o && setQr(null)} />}

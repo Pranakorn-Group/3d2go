@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/backstore/page-header";
 import { StatusBadge } from "@/components/backstore/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCatalog, getLastPrices, getLeadTimes } from "@/lib/catalog";
+import { EMPTY_CATALOG, getCatalog, getLastPrices, getLeadTimes } from "@/lib/catalog";
 import { prisma } from "@/lib/db";
 import { purchaseInclude, toProduct, toPurchase } from "@/lib/dto";
 import { estimateArrival } from "@/lib/eta";
@@ -23,7 +23,7 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
   const products = editable
     ? (await prisma.product.findMany({ where: { active: true }, orderBy: [{ brand: "asc" }, { type: "asc" }, { color: "asc" }] })).map(toProduct)
     : [];
-  const catalog = editable ? await getCatalog() : { brands: [], types: [] };
+  const catalog = editable ? await getCatalog() : EMPTY_CATALOG;
   const lastPrices = editable ? await getLastPrices() : {};
   const eta = editable ? estimateArrival(row, await getLeadTimes()) : null;
 

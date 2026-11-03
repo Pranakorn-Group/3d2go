@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
-import { ArrowLeft, FlaskConical, Printer, RotateCcw, Search } from "lucide-react";
+import { ArrowLeft, FlaskConical, ListChecks, Printer, RotateCcw, Save, Search, Trash2 } from "lucide-react";
 import { ColorSwatch } from "@/components/backstore/color-swatch";
 import { EmptyState } from "@/components/backstore/empty-state";
 import { PageHeader } from "@/components/backstore/page-header";
@@ -14,11 +14,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { labelSerial, placeLabels, sheetLayout, type Placed, type SheetSettings } from "@/lib/labels";
+import { PREVIEW_SERIAL, placeLabels, sheetLayout, type Placed, type SheetSettings } from "@/lib/labels";
 import type { ProductDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { createLabels } from "./actions";
+import { createLabels, deleteLabelPreset, saveLabelPreset } from "./actions";
 import { LabelSheet, type Guides, type SheetItem } from "./label-sheet";
 
 /** The form, as typed: lengths in cm. */
@@ -35,6 +36,9 @@ type Form = {
   center: boolean;
   guides: Guides;
   logo: boolean;
+  partner: boolean;
+  strip: boolean;
+  slogan: string;
 };
 
 // A common 21-up A4 sticker sheet (63.5 × 38.1 mm, 3 × 7).
@@ -51,8 +55,13 @@ const DEFAULTS: Form = {
   center: true,
   guides: "cross",
   logo: true,
+  partner: true,
+  strip: true,
+  slogan: "Operated by Pranakorn Corporation Co., Ltd.",
 };
 const STORE = "3d2go.rollLabels";
+
+export type LabelPresetDTO = { id: string; name: string; settings: Record<string, string | boolean> };
 
 const cm = (v: string) => Math.max(0, Number(v) || 0) * 10;
 const noop = () => () => {};
@@ -61,7 +70,10 @@ const useMounted = () => useSyncExternalStore(noop, () => true, () => false);
 function loadForm(): Form {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? "null");
-    return saved ? { ...DEFAULTS, ...saved } : DEFAULTS;
+    if (!saved) return DEFAULTS;
+    // The footer used to default to a 3D2GO slogan; move browsers still on it to the new default.
+    if (saved.slogan === "Filament, ready to go.") delete saved.slogan;
+    return { ...DEFAULTS, ...saved };
   } catch {
     return DEFAULTS;
   }
@@ -78,7 +90,7 @@ function paginate(placed: Placed<SheetItem>[], layout: ReturnType<typeof sheetLa
   return { pages, skipped };
 }
 
-export function LabelsView({ products }: { products: ProductDTO[] }) {
+export function LabelsView({ products, presets }: { products: ProductDTO[]; presets: LabelPresetDTO[] }) {
   const mounted = useMounted();
   const [form, setForm] = useState<Form>(DEFAULTS);
   const [loaded, setLoaded] = useState(false);
@@ -86,6 +98,9 @@ export function LabelsView({ products }: { products: ProductDTO[] }) {
   const [q, setQ] = useState("");
   const [each, setEach] = useState("1");
   const [skip, setSkip] = useState(0);
+  const [presetId, setPresetId] = useState("");
+  const [presetName, setPresetName] = useState("");
+  const [savingPreset, startSavingPreset] = useTransition();
   /** Serials made by the last print run; null while choosing what to print. */
   const [run, setRun] = useState<SheetItem[] | null>(null);
   const [qrs, setQrs] = useState<Record<string, string>>({});
@@ -128,12 +143,12 @@ export function LabelsView({ products }: { products: ProductDTO[] }) {
   const layout = sheetLayout(settings);
   const start = Math.min(skip, Math.max(0, layout.perPage - 1));
 
-  // Until serials are made, the preview uses SKU-0000 placeholders.
+  // Until serials are made, the preview uses a placeholder that never scans as a real label.
   const draft = useMemo<SheetItem[]>(
     () =>
       products.flatMap((p) => {
         const n = Math.max(0, Math.floor(Number(qty[p.id]) || 0));
-        return Array.from({ length: n }, () => ({ serial: labelSerial(p.sku, 0), product: p }));
+        return Array.from({ length: n }, () => ({ serial: PREVIEW_SERIAL, product: p }));
       }),
     [products, qty],
   );
@@ -186,13 +201,42 @@ export function LabelsView({ products }: { products: ProductDTO[] }) {
     });
   }
 
+  function applyPreset(id: string) {
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    setPresetId(id);
+    setPresetName(preset.name);
+    patch({ ...DEFAULTS, ...(preset.settings as Partial<Form>) });
+  }
+
+  function savePreset() {
+    startSavingPreset(async () => {
+      const res = await saveLabelPreset({ name: presetName, settings: form });
+      if (!res.ok) return void toast.error(res.error);
+      setPresetId(res.data.id);
+      toast.success(`Saved preset “${res.data.name}”`);
+    });
+  }
+
+  function removePreset() {
+    const preset = presets.find((p) => p.id === presetId);
+    if (!preset || !confirm(`Delete preset “${preset.name}”?`)) return;
+    startSavingPreset(async () => {
+      const res = await deleteLabelPreset(preset.id);
+      if (!res.ok) return void toast.error(res.error);
+      setPresetId("");
+      setPresetName("");
+      toast.success(`Deleted “${preset.name}”`);
+    });
+  }
+
   function newBatch() {
     setRun(null);
     setQty({});
     setSkip(0);
   }
 
-  const sheetProps = { layout, qrs, logo: form.logo, guides: form.guides };
+  const sheetProps = { layout, qrs, logo: form.logo, partner: form.partner, strip: form.strip, slogan: form.slogan, guides: form.guides };
   const tooBig = layout.perPage === 0;
 
   return (
@@ -211,6 +255,11 @@ export function LabelsView({ products }: { products: ProductDTO[] }) {
               : "Pre-print QR labels for rolls — each label gets its own serial, scanned at the POS."
           }
         >
+          <Button asChild variant="ghost">
+            <Link href="/backstore/stock/labels/printed">
+              <ListChecks /> Printed labels
+            </Link>
+          </Button>
           {run ? (
             <>
               <Button variant="outline" onClick={newBatch}>
@@ -225,7 +274,7 @@ export function LabelsView({ products }: { products: ProductDTO[] }) {
               <Button
                 variant="outline"
                 disabled={!total || tooBig}
-                title="Prints placeholder serials (SKU-0000) to check alignment — no serials are used"
+                title="Prints placeholder serials (SAMPLE) to check alignment — no serials are used"
                 onClick={print}
               >
                 <FlaskConical /> Test print
@@ -310,6 +359,33 @@ export function LabelsView({ products }: { products: ProductDTO[] }) {
               </CardHeader>
               <CardContent>
                 <FieldGroup className="gap-4">
+                  <Field>
+                    <FieldLabel>Preset</FieldLabel>
+                    <div className="flex gap-1.5">
+                      <Select value={presets.some((p) => p.id === presetId) ? presetId : ""} onValueChange={applyPreset} disabled={!presets.length}>
+                        <SelectTrigger className="w-full min-w-0">
+                          <SelectValue placeholder={presets.length ? "Load a saved layout…" : "No presets yet"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {presets.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button variant="outline" size="icon" aria-label="Delete preset" disabled={!presetId || savingPreset} onClick={removePreset}>
+                        <Trash2 />
+                      </Button>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <Input placeholder="Preset name, e.g. A4 21-up sticker" value={presetName} onChange={(e) => setPresetName(e.target.value)} />
+                      <Button variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>
+                        <Save /> Save
+                      </Button>
+                    </div>
+                    <FieldDescription>Saves everything below for everyone. Same name overwrites it.</FieldDescription>
+                  </Field>
                   <ToggleGroup
                     type="single"
                     variant="outline"
@@ -391,6 +467,19 @@ export function LabelsView({ products }: { products: ProductDTO[] }) {
                     <input type="checkbox" className="size-4 accent-primary" checked={form.logo} onChange={(e) => patch({ logo: e.target.checked })} />
                     Show the 3D2GO logo
                   </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" className="size-4 accent-primary" checked={form.partner} onChange={(e) => patch({ partner: e.target.checked })} />
+                    Pranakorn logo above the QR code, when there&apos;s room
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" className="size-4 accent-primary" checked={form.strip} onChange={(e) => patch({ strip: e.target.checked })} />
+                    Strip in the filament&apos;s color at the bottom, when there&apos;s room
+                  </label>
+                  <Field>
+                    <FieldLabel htmlFor="slogan">Footer text</FieldLabel>
+                    <Input id="slogan" maxLength={60} placeholder="None" value={form.slogan} onChange={set("slogan")} />
+                    <FieldDescription>Printed along the bottom when there&apos;s room. Clear it to leave it off.</FieldDescription>
+                  </Field>
                   <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => patch(DEFAULTS)}>
                     <RotateCcw /> Reset layout
                   </Button>
@@ -460,6 +549,7 @@ export function LabelsView({ products }: { products: ProductDTO[] }) {
         items.length > 0 &&
         createPortal(
           <div className="label-sheets">
+            <style>{"@media print { @page { size: A4 portrait; margin: 0 } }"}</style>
             {pages.map((page, i) => (
               <LabelSheet key={i} {...sheetProps} placed={page} />
             ))}

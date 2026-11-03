@@ -48,12 +48,16 @@ enum SpoolStatus {
 model Brand {
   id        String   @id @default(cuid())
   name      String   @unique
+  /// 2-letter SKU code (lib/sku.ts); null = from the name.
+  code      String?
   createdAt DateTime @default(now())
 }
 
 model FilamentType {
   id        String   @id @default(cuid())
   name      String   @unique
+  /// 3-letter SKU code (lib/sku.ts); null = from the name.
+  code      String?
   createdAt DateTime @default(now())
 }
 
@@ -199,6 +203,15 @@ model ProductLabel {
 
   @@unique([productId, seq])
   @@index([saleId])
+}
+
+/// A saved A4 roll-label layout (label size, gaps, margins, guides…), shared by everyone printing labels.
+model LabelPreset {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  /// The label page's layout form, lengths in cm as typed.
+  settings  Json
+  updatedAt DateTime @updatedAt
 }
 
 /// How a roll of one brand + type weighs: filament on a full roll, the empty reel, and density (g/cm³).

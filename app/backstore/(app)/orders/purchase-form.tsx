@@ -234,6 +234,7 @@ export function PurchaseForm({
             <ProductDialog
               brands={catalog.brands}
               types={catalog.types}
+              codes={catalog.codes}
               onSaved={(p) => {
                 setProducts((ps) => [...ps, p]);
                 setLines((ls) => {

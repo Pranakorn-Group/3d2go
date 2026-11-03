@@ -2,16 +2,32 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { estimateArrival, leadTimes, type LeadTimes } from "@/lib/eta";
 import type { LastPrices } from "@/lib/last-price";
+import type { SkuCodes } from "@/lib/sku";
 
-export type Catalog = { brands: string[]; types: string[] };
+export type Catalog = { brands: string[]; types: string[]; codes: SkuCodes };
+
+export const EMPTY_CATALOG: Catalog = { brands: [], types: [], codes: { brands: {}, types: {} } };
+
+/** Saved SKU codes per brand / type name. */
+export async function getSkuCodes(): Promise<SkuCodes> {
+  const [brands, types] = await Promise.all([
+    prisma.brand.findMany({ where: { code: { not: null } }, select: { name: true, code: true } }),
+    prisma.filamentType.findMany({ where: { code: { not: null } }, select: { name: true, code: true } }),
+  ]);
+  return {
+    brands: Object.fromEntries(brands.map((b) => [b.name, b.code!])),
+    types: Object.fromEntries(types.map((t) => [t.name, t.code!])),
+  };
+}
 
 /** The brand and type names a product can be created with (managed on Stock → Brands & types). */
 export async function getCatalog(): Promise<Catalog> {
-  const [brands, types] = await Promise.all([
+  const [brands, types, codes] = await Promise.all([
     prisma.brand.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
     prisma.filamentType.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
+    getSkuCodes(),
   ]);
-  return { brands: brands.map((b) => b.name), types: types.map((t) => t.name) };
+  return { brands: brands.map((b) => b.name), types: types.map((t) => t.name), codes };
 }
 
 /** Last price paid per roll for every product, per order currency (cancelled orders skipped). */

@@ -8,7 +8,8 @@ import { buildBulkRows } from "@/lib/bulk";
 import { weightedAverage } from "@/lib/costing";
 import { prisma } from "@/lib/db";
 import { toProduct } from "@/lib/dto";
-import { makeSku } from "@/lib/sku";
+import { getSkuCodes } from "@/lib/catalog";
+import { CODE_LEN, convertSkus, normalizeCode, shortCode, skuPrefix } from "@/lib/sku";
 
 const optionalText = z
   .string()
@@ -124,11 +125,12 @@ export async function bulkCreateProducts(input: z.input<typeof bulkSchema>) {
       bulkSchema.parse(input);
     await assertInCatalog(brand, type);
 
+    const codes = await getSkuCodes();
     const existing = await prisma.product.findMany({
-      where: { sku: { startsWith: makeSku(brand, type, "") } },
+      where: { sku: { startsWith: skuPrefix(codes, brand, type) } },
       select: { sku: true },
     });
-    const { rows, errors } = buildBulkRows(colors, brand, type, existing.map((e) => e.sku));
+    const { rows, errors } = buildBulkRows(colors, codes, brand, type, existing.map((e) => e.sku));
     if (errors.length) throw new UserError(`Row ${errors[0].line}: ${errors[0].message}`);
     if (!rows.length) throw new UserError("Add at least one color");
 
@@ -192,25 +194,38 @@ const catalogSchema = z.object({
   kind: z.enum(["brand", "type"]),
   id: z.string().optional(),
   name: z.string().trim().min(1, "Name is required").max(60),
+  /** SKU short code; blank = from the name. Left out = unchanged. */
+  code: z.string().optional(),
 });
 
-/** Adds a brand/type, or renames one — products using the old name are renamed with it. */
+/** Adds a brand/type, or renames one — products using the old name are renamed with it. Also sets its SKU code. */
 export async function saveCatalogItem(input: z.input<typeof catalogSchema>) {
   return run(async () => {
     await requireAdmin();
-    const { kind, id, name } = catalogSchema.parse(input);
+    const { kind, id, name, code: rawCode } = catalogSchema.parse(input);
+    const len = CODE_LEN[kind];
+    const code = rawCode === undefined ? undefined : normalizeCode(rawCode, len) || null;
+    if (code && code.length !== len) throw new UserError(`The code needs ${len} letters or digits`);
+
+    // Two brands (or two types) with the same code would make their SKUs look alike.
+    if (code !== undefined) {
+      const mine = code ?? shortCode(name, len);
+      const others = kind === "brand" ? await prisma.brand.findMany() : await prisma.filamentType.findMany();
+      const clash = others.find((o) => o.id !== id && (o.code ?? shortCode(o.name, len)) === mine);
+      if (clash) throw new UserError(`${clash.name} already uses the code ${mine} — pick another`);
+    }
 
     await prisma.$transaction(async (tx) => {
       if (kind === "brand") {
-        if (!id) return void (await tx.brand.create({ data: { name } }));
+        if (!id) return void (await tx.brand.create({ data: { name, code } }));
         const old = await tx.brand.findUniqueOrThrow({ where: { id } });
-        await tx.brand.update({ where: { id }, data: { name } });
+        await tx.brand.update({ where: { id }, data: { name, code } });
         await tx.product.updateMany({ where: { brand: old.name }, data: { brand: name } });
         await tx.spoolSpec.updateMany({ where: { brand: old.name }, data: { brand: name } });
       } else {
-        if (!id) return void (await tx.filamentType.create({ data: { name } }));
+        if (!id) return void (await tx.filamentType.create({ data: { name, code } }));
         const old = await tx.filamentType.findUniqueOrThrow({ where: { id } });
-        await tx.filamentType.update({ where: { id }, data: { name } });
+        await tx.filamentType.update({ where: { id }, data: { name, code } });
         await tx.product.updateMany({ where: { type: old.name }, data: { type: name } });
         await tx.spoolSpec.updateMany({ where: { type: old.name }, data: { type: name } });
       }
@@ -275,5 +290,46 @@ export async function setProductActive(id: string, active: boolean) {
     await requireAdmin();
     await prisma.product.update({ where: { id }, data: { active } });
     revalidatePath("/backstore", "layout");
+  });
+}
+
+/** Every product whose SKU changes under the current brand / type codes, oldest product first claiming a code. */
+async function plannedSkus() {
+  const [products, codes] = await Promise.all([
+    prisma.product.findMany({
+      select: { id: true, sku: true, brand: true, type: true, color: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    }),
+    getSkuCodes(),
+  ]);
+  const next = convertSkus(products, codes);
+  return products.map((p) => ({ ...p, next: next.get(p.id)! }));
+}
+
+/** Preview of the bulk SKU change: only the products whose SKU would change. */
+export async function previewSkuConversion() {
+  return run(async () => {
+    await requireAdmin();
+    const all = await plannedSkus();
+    return { total: all.length, changes: all.filter((p) => p.sku !== p.next).map((p) => ({ id: p.id, from: p.sku, to: p.next, name: `${p.brand} ${p.type} · ${p.color}` })) };
+  });
+}
+
+/**
+ * Rewrites every SKU into the BRAND-TYPE-COLOR (2-3-3) format. Printed roll labels keep working:
+ * their serials are stored, not worked out from the SKU.
+ */
+export async function convertAllSkus() {
+  return run(async () => {
+    await requireAdmin();
+    const changes = (await plannedSkus()).filter((p) => p.sku !== p.next);
+    if (!changes.length) return 0;
+    await prisma.$transaction(async (tx) => {
+      // Via a temporary SKU first, so one product can take a SKU another is giving up.
+      for (const p of changes) await tx.product.update({ where: { id: p.id }, data: { sku: `~${p.id}` } });
+      for (const p of changes) await tx.product.update({ where: { id: p.id }, data: { sku: p.next } });
+    });
+    revalidatePath("/backstore", "layout");
+    return changes.length;
   });
 }

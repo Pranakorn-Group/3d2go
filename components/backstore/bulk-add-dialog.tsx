@@ -19,7 +19,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { type BulkColor, buildBulkRows, parsePastedColors } from "@/lib/bulk";
-import { makeSku } from "@/lib/sku";
+import { skuPrefix, type SkuCodes } from "@/lib/sku";
 import { cn } from "@/lib/utils";
 
 type Shared = { sellPriceSgd: string; openingQty: string; openingCostSgd: string; note: string };
@@ -30,10 +30,12 @@ const blank = (): BulkColor => ({ color: "", colorHex: null });
 export function BulkAddDialog({
   brands,
   types,
+  codes,
   trigger,
 }: {
   brands: string[];
   types: string[];
+  codes: SkuCodes;
   trigger: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -49,7 +51,7 @@ export function BulkAddDialog({
 
   // SKUs already in the system for this brand + type, so the preview shows the suffixed SKU that will be saved.
   const [taken, setTaken] = useState<{ prefix: string; skus: string[] }>({ prefix: "", skus: [] });
-  const prefix = brand && type ? makeSku(brand, type, "") : "";
+  const prefix = brand && type ? skuPrefix(codes, brand, type) : "";
   useEffect(() => {
     if (!open || !prefix) return;
     let stale = false;
@@ -62,8 +64,8 @@ export function BulkAddDialog({
   }, [open, prefix]);
 
   const parsed = useMemo(
-    () => buildBulkRows(colors, brand, type, taken.prefix === prefix ? taken.skus : []),
-    [colors, brand, type, taken, prefix],
+    () => buildBulkRows(colors, codes, brand, type, taken.prefix === prefix ? taken.skus : []),
+    [colors, codes, brand, type, taken, prefix],
   );
   const skuByLine = new Map(parsed.rows.map((r) => [r.line, r.sku]));
   const errorByLine = new Map(parsed.errors.map((e) => [e.line, e.message]));

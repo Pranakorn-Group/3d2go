@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/backstore/page-header";
 import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/db";
-import { CatalogView } from "./catalog-view";
+import { CatalogView, ConvertSkusDialog } from "./catalog-view";
 
 export const metadata: Metadata = { title: "Brands & types" };
 
@@ -25,10 +25,15 @@ export default async function CatalogPage() {
           <ArrowLeft /> Stock
         </Link>
       </Button>
-      <PageHeader title="Brands & types" description="Filament is created from these lists. Renaming updates every product using it." />
+      <PageHeader
+        title="Brands & types"
+        description="Filament is created from these lists. Renaming updates every product using it. Codes make up the SKU: BRAND-TYPE-COLOR, e.g. BA-PLB-CYA."
+      >
+        <ConvertSkusDialog />
+      </PageHeader>
       <CatalogView
-        brands={brands.map((b) => ({ id: b.id, name: b.name, used: brandCount.get(b.name) ?? 0 }))}
-        types={types.map((t) => ({ id: t.id, name: t.name, used: typeCount.get(t.name) ?? 0 }))}
+        brands={brands.map((b) => ({ id: b.id, name: b.name, code: b.code, used: brandCount.get(b.name) ?? 0 }))}
+        types={types.map((t) => ({ id: t.id, name: t.name, code: t.code, used: typeCount.get(t.name) ?? 0 }))}
       />
     </>
   );

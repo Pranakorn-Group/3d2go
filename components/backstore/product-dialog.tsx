@@ -20,7 +20,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { makeSku, uniqueSku } from "@/lib/sku";
+import { makeSku, skuPrefix, type SkuCodes } from "@/lib/sku";
 import type { ProductDTO } from "@/lib/types";
 
 type Form = {
@@ -63,6 +63,7 @@ export function ProductDialog({
   product,
   brands,
   types,
+  codes,
   trigger,
   onSaved,
   open: controlledOpen,
@@ -71,6 +72,7 @@ export function ProductDialog({
   product?: ProductDTO;
   brands: string[];
   types: string[];
+  codes: SkuCodes;
   trigger?: React.ReactNode;
   onSaved?: (p: ProductDTO) => void;
   open?: boolean;
@@ -99,12 +101,11 @@ export function ProductDialog({
 
   // Skips SKUs already in the system (this product's own SKU doesn't count).
   function autoSku() {
-    const base = makeSku(form.brand, form.type, form.color);
     startGenerating(async () => {
-      const res = await skusStartingWith(base);
+      const res = await skusStartingWith(skuPrefix(codes, form.brand, form.type));
       if (!res.ok) return void toast.error(res.error);
       const taken = new Set(res.data.filter((s) => s !== product?.sku));
-      setForm((f) => ({ ...f, sku: uniqueSku(base, taken) }));
+      setForm((f) => ({ ...f, sku: makeSku(codes, form.brand, form.type, form.color, taken) }));
     });
   }
 

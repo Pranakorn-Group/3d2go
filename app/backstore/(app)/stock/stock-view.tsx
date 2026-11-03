@@ -226,6 +226,7 @@ export function StockView({
         <BulkAddDialog
           brands={catalog.brands}
           types={catalog.types}
+          codes={catalog.codes}
           trigger={
             <Button variant="outline">
               <ListPlus /> Bulk add
@@ -235,6 +236,7 @@ export function StockView({
         <ProductDialog
           brands={catalog.brands}
           types={catalog.types}
+          codes={catalog.codes}
           trigger={
             <Button>
               <Plus /> New filament
@@ -458,6 +460,7 @@ export function StockView({
           product={editing}
           brands={catalog.brands}
           types={catalog.types}
+          codes={catalog.codes}
           open={!!editing}
           onOpenChange={(o) => !o && setEditing(null)}
         />

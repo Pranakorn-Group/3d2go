@@ -188,15 +188,19 @@
 }
 
 /* Roll label sheets (Stock → Roll labels) are portalled straight under <body> and printed alone, edge to edge on A4,
-   so every label lands where the layout put it in mm. */
+   so every label lands where the layout put it in mm. The page's own <style> sets `@page { margin: 0 }` while it's
+   open (a named @page isn't supported everywhere, and the default paper margins would push each sheet onto two pages). */
 .label-sheets {
   display: none;
 }
-@page roll-labels {
-  size: A4 portrait;
-  margin: 0;
-}
 @media print {
+  html:has(> body > .label-sheets),
+  body:has(> .label-sheets) {
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
   body:has(> .label-sheets) > :not(.label-sheets) {
     display: none !important;
   }
@@ -206,14 +210,16 @@
   }
   .label-sheets {
     display: block;
-    page: roll-labels;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .label-sheets > * {
+  /* A hair under 297 mm, so rounding can never spill a sheet onto a blank page. */
+  .label-sheets > div {
+    height: 296.5mm !important;
+    break-inside: avoid;
     break-after: page;
   }
-  .label-sheets > :last-child {
+  .label-sheets > div:last-child {
     break-after: auto;
   }
 }
