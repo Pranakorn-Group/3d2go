@@ -29,6 +29,9 @@ export function toProduct(p: Prisma.ProductGetPayload<object>): ProductDTO {
     refUrl: p.refUrl,
     note: p.note,
     lowStockAt: p.lowStockAt,
+    weightG: p.weightG,
+    printTempMin: p.printTempMin,
+    printTempMax: p.printTempMax,
     active: p.active,
   };
 }

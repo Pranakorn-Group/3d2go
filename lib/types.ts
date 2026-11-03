@@ -14,6 +14,9 @@ export type ProductDTO = {
   refUrl: string | null;
   note: string | null;
   lowStockAt: number;
+  weightG: number;
+  printTempMin: number | null;
+  printTempMax: number | null;
   active: boolean;
 };
 

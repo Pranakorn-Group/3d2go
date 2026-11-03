@@ -72,6 +72,11 @@ model Product {
   refUrl       String?
   note         String?
   lowStockAt   Int      @default(2)
+  /// Filament on a full roll, printed on the label.
+  weightG      Int      @default(1000)
+  /// Nozzle temperature range (°C) printed on the label; either end may be blank.
+  printTempMin Int?
+  printTempMax Int?
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -80,6 +85,7 @@ model Product {
   saleItems     SaleItem[]
   movements     StockMovement[]
   spools        Spool[]
+  labels        ProductLabel[]
 
   @@index([brand, type])
 }
@@ -140,7 +146,8 @@ model Sale {
   createdAt    DateTime   @default(now())
   completedAt  DateTime?
 
-  items SaleItem[]
+  items  SaleItem[]
+  labels ProductLabel[]
 
   @@index([status, createdAt])
 }
@@ -173,6 +180,25 @@ model StockMovement {
   product Product @relation(fields: [productId], references: [id])
 
   @@index([productId, createdAt])
+}
+
+/// A printed roll label: its serial (SKU-0001…) is the QR code, scanned at the POS.
+/// Labels are pre-printed, so there can be more than the stock on hand. saleId is set while a sale or
+/// reservation holds the roll, soldAt once it is sold; both clear when that sale is cancelled.
+model ProductLabel {
+  id        String    @id @default(cuid())
+  serial    String    @unique
+  productId String
+  seq       Int
+  printedAt DateTime  @default(now())
+  saleId    String?
+  soldAt    DateTime?
+
+  product Product @relation(fields: [productId], references: [id])
+  sale    Sale?   @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  @@unique([productId, seq])
+  @@index([saleId])
 }
 
 /// How a roll of one brand + type weighs: filament on a full roll, the empty reel, and density (g/cm³).

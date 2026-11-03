@@ -1,16 +1,19 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import toast from "react-hot-toast";
-import { BookmarkPlus, Minus, PackageCheck, Plus, QrCode, Search, ShoppingCart, Trash2, X } from "lucide-react";
+import { BookmarkPlus, Minus, PackageCheck, Plus, QrCode, ScanLine, Search, ShoppingCart, Trash2, X } from "lucide-react";
 import { createSale } from "@/app/backstore/(app)/sales/actions";
+import { lookupLabel } from "@/app/backstore/(app)/stock/labels/actions";
 import { ColorSwatch } from "@/components/backstore/color-swatch";
 import { EmptyState } from "@/components/backstore/empty-state";
 import { PayNowDialog, type PayNowConfig, type PayNowRequest } from "@/components/backstore/paynow-dialog";
+import { QrScanner } from "@/components/backstore/qr-scanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -24,13 +27,45 @@ import { available, type ProductDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Mode = "sell" | "reserve";
-type CartLine = { productId: string; qty: number; unitPrice: string };
+/** `serials`: roll labels scanned for this line — at most qty; the rest of the rolls were tapped in. */
+type CartLine = { productId: string; qty: number; unitPrice: string; serials: string[] };
 type Group = { key: string; items: ProductDTO[] };
 
 const groupKey = (p: ProductDTO) => `${p.brand} ${p.type}`;
 const noop = () => () => {};
 /** False during SSR and hydration, true after, so client-only portals don't mismatch the server HTML. */
 const useMounted = () => useSyncExternalStore(noop, () => true, () => false);
+
+/**
+ * A USB / Bluetooth scanner types the code and Enter faster than anyone can. Collects such bursts typed
+ * outside a text field and hands them to `onScan`; fields handle their own Enter (the search box does).
+ */
+function useScannerKeys(onScan: (text: string) => void) {
+  const onScanRef = useRef(onScan);
+  useEffect(() => {
+    onScanRef.current = onScan;
+  });
+  useEffect(() => {
+    let buf = "";
+    let last = 0;
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable=true]") || e.ctrlKey || e.metaKey || e.altKey) return;
+      const now = Date.now();
+      if (now - last > 60) buf = "";
+      last = now;
+      if (e.key === "Enter") {
+        if (buf.length >= 4) {
+          e.preventDefault();
+          onScanRef.current(buf);
+        }
+        buf = "";
+      } else if (e.key.length === 1) buf += e.key;
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+}
 
 export function PosView({
   products,
@@ -55,6 +90,8 @@ export function PosView({
   const [note, setNote] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [qr, setQr] = useState<PayNowRequest | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanning, startScanning] = useTransition();
   const [pending, startTransition] = useTransition();
   const mounted = useMounted();
 
@@ -97,14 +134,51 @@ export function PosView({
     setCart((c) =>
       c.some((l) => l.productId === p.id)
         ? c.map((l) => (l.productId === p.id ? { ...l, qty: l.qty + 1 } : l))
-        : [...c, { productId: p.id, qty: 1, unitPrice: String(p.sellPriceSgd) }],
+        : [...c, { productId: p.id, qty: 1, unitPrice: String(p.sellPriceSgd), serials: [] }],
+    );
+  }
+
+  /** A scanned roll label: fills a tapped-in roll of that color without a label yet, else adds one more. */
+  function scan(text: string) {
+    const serial = text.trim().toUpperCase();
+    if (!serial) return;
+    if (cart.some((l) => l.serials.includes(serial))) return void toast.error(`${serial} is already in the cart`);
+    startScanning(async () => {
+      const res = await lookupLabel(serial);
+      if (!res.ok) return void toast.error(res.error);
+      const p = byId.get(res.data.productId);
+      if (!p) return void toast.error(`${serial}: that filament isn't on sale (archived?)`);
+      const line = cart.find((l) => l.productId === p.id);
+      const fills = !!line && line.serials.length < line.qty;
+      if (!fills && inCart(p.id) >= available(p)) return void toast.error(`${serial}: only ${available(p)} ${p.color} in stock`);
+      setCart((c) =>
+        c.some((l) => l.productId === p.id)
+          ? c.map((l) =>
+              l.productId === p.id
+                ? { ...l, qty: l.serials.length < l.qty ? l.qty : l.qty + 1, serials: l.serials.includes(serial) ? l.serials : [...l.serials, serial] }
+                : l,
+            )
+          : [...c, { productId: p.id, qty: 1, unitPrice: String(p.sellPriceSgd), serials: [serial] }],
+      );
+      toast.success(`${p.brand} ${p.type} · ${p.color}`, { id: "scan" });
+      setQ("");
+    });
+  }
+  useScannerKeys(scan);
+
+  function removeSerial(id: string, serial: string) {
+    setCart((c) =>
+      c.flatMap((l) => (l.productId !== id ? [l] : l.qty <= 1 ? [] : [{ ...l, qty: l.qty - 1, serials: l.serials.filter((s) => s !== serial) }])),
     );
   }
 
   function setQty(id: string, qty: number) {
     const p = byId.get(id)!;
     if (qty > available(p)) return void toast.error(`Only ${available(p)} available`);
-    setCart((c) => (qty <= 0 ? c.filter((l) => l.productId !== id) : c.map((l) => (l.productId === id ? { ...l, qty } : l))));
+    // Fewer rolls than scanned labels drops the last scans.
+    setCart((c) =>
+      qty <= 0 ? c.filter((l) => l.productId !== id) : c.map((l) => (l.productId === id ? { ...l, qty, serials: l.serials.slice(0, qty) } : l)),
+    );
   }
 
   function reset() {
@@ -121,7 +195,7 @@ export function PosView({
     startTransition(async () => {
       const res = await createSale({
         mode,
-        items: cart.map((l) => ({ productId: l.productId, qty: l.qty, unitPrice: l.unitPrice || 0 })),
+        items: cart.map((l) => ({ productId: l.productId, qty: l.qty, unitPrice: l.unitPrice || 0, serials: l.serials })),
         discount: disc,
         customerName,
         phone,
@@ -215,6 +289,18 @@ export function PosView({
                     </InputGroup>
                     <span className="ml-auto text-sm font-medium tabular-nums">{formatSGD(l.qty * (Number(l.unitPrice) || 0))}</span>
                   </div>
+                  {l.serials.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pl-7">
+                      {l.serials.map((serial) => (
+                        <span key={serial} className="flex items-center gap-0.5 rounded bg-muted py-0.5 pr-0.5 pl-1.5 font-mono text-[11px] text-muted-foreground">
+                          {serial.slice(p.sku.length + 1) || serial}
+                          <button type="button" aria-label={`Remove ${serial}`} title={serial} onClick={() => removeSerial(p.id, serial)} className="rounded p-0.5 hover:bg-background hover:text-foreground">
+                            <X className="size-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </motion.li>
               );
             })}
@@ -288,6 +374,9 @@ export function PosView({
       <div className="min-w-0">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">POS</h1>
+          <Button variant="outline" className="ml-auto" onClick={() => setScanOpen(true)} title="Scan roll labels with the camera — a USB scanner works anytime">
+            <ScanLine /> Scan
+          </Button>
           <Button
             variant="outline"
             disabled={!paynow}
@@ -302,7 +391,17 @@ export function PosView({
             <InputGroupAddon>
               <Search />
             </InputGroupAddon>
-            <InputGroupInput placeholder="Search filament…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <InputGroupInput
+              placeholder="Search filament or scan a label…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && q.trim()) {
+                  e.preventDefault();
+                  scan(q);
+                }
+              }}
+            />
           </InputGroup>
           <Toggle
             variant="outline"
@@ -437,6 +536,16 @@ export function PosView({
       </Sheet>
       {/* Room for the cart bar (3.5rem + gap) on top of the layout padding that already clears the tab bar. */}
       <div className="h-16 lg:hidden" aria-hidden />
+      <Dialog open={scanOpen} onOpenChange={setScanOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Scan roll labels</DialogTitle>
+            <DialogDescription>Each label adds its roll to the cart. Keep scanning, then close.</DialogDescription>
+          </DialogHeader>
+          {scanOpen && <QrScanner onScan={scan} paused={scanning} />}
+          <p className="text-center text-sm text-muted-foreground">{rolls(count)} in the cart</p>
+        </DialogContent>
+      </Dialog>
       {paynow && <PayNowDialog config={paynow} request={qr} onOpenChange={(o) => !o && setQr(null)} />}
     </div>
   );

@@ -186,3 +186,34 @@
     width: 100%;
   }
 }
+
+/* Roll label sheets (Stock → Roll labels) are portalled straight under <body> and printed alone, edge to edge on A4,
+   so every label lands where the layout put it in mm. */
+.label-sheets {
+  display: none;
+}
+@page roll-labels {
+  size: A4 portrait;
+  margin: 0;
+}
+@media print {
+  body:has(> .label-sheets) > :not(.label-sheets) {
+    display: none !important;
+  }
+  .label-sheets,
+  .label-sheets * {
+    visibility: visible;
+  }
+  .label-sheets {
+    display: block;
+    page: roll-labels;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .label-sheets > * {
+    break-after: page;
+  }
+  .label-sheets > :last-child {
+    break-after: auto;
+  }
+}

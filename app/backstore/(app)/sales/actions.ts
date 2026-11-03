@@ -18,6 +18,8 @@ const saleSchema = z
           productId: z.string(),
           qty: z.coerce.number().int().positive("Qty must be at least 1"),
           unitPrice: z.coerce.number().min(0, "Price can't be negative"),
+          /** Roll labels scanned for this line (lib/labels.ts); may be fewer than qty. */
+          serials: z.array(z.string().trim().toUpperCase().min(1)).default([]),
         }),
       )
       .min(1, "Cart is empty"),
@@ -46,6 +48,25 @@ async function notEnough(tx: Prisma.TransactionClient, productId: string): Promi
   const p = await tx.product.findUnique({ where: { id: productId } });
   if (!p) throw new UserError("Product not found");
   throw new UserError(`${p.sku}: only ${p.stockQty - p.reservedQty} available`);
+}
+
+/** Ties the scanned labels to the sale (sold now, or held by a reservation) so they can't be sold again. */
+async function claimLabels(
+  tx: Prisma.TransactionClient,
+  items: { productId: string; qty: number; serials: string[] }[],
+  saleId: string,
+  sold: boolean,
+) {
+  for (const item of items) {
+    const serials = [...new Set(item.serials)];
+    if (!serials.length) continue;
+    if (serials.length > item.qty) throw new UserError(`${serials.length} labels scanned for ${item.qty} roll${item.qty === 1 ? "" : "s"}`);
+    const { count } = await tx.productLabel.updateMany({
+      where: { serial: { in: serials }, productId: item.productId, saleId: null, soldAt: null },
+      data: { saleId, soldAt: sold ? new Date() : null },
+    });
+    if (count !== serials.length) throw new UserError("A scanned label was already used or belongs to another filament — scan again");
+  }
 }
 
 export async function createSale(input: SaleInput) {
@@ -101,6 +122,8 @@ export async function createSale(input: SaleInput) {
         },
       });
 
+      await claimLabels(tx, s.items, created.id, sell);
+
       if (sell) {
         await tx.stockMovement.createMany({
           data: s.items.map((i) => ({
@@ -155,6 +178,7 @@ export async function completeReservation(id: string) {
           note: sale.code,
         })),
       });
+      await tx.productLabel.updateMany({ where: { saleId: id }, data: { soldAt: new Date() } });
       await tx.sale.update({
         where: { id },
         data: {
@@ -207,6 +231,8 @@ export async function cancelSale(id: string) {
           });
         }
       }
+      // Its labels go back on the shelf with the rolls.
+      await tx.productLabel.updateMany({ where: { saleId: id }, data: { saleId: null, soldAt: null } });
       await tx.sale.update({ where: { id }, data: { status: "CANCELLED" } });
     });
 

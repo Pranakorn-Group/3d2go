@@ -17,6 +17,11 @@ const optionalText = z
   .nullable()
   .optional();
 
+const optionalTemp = z
+  .union([z.literal("").transform(() => null), z.coerce.number().int("Temperature must be a whole number").min(0).max(500)])
+  .nullable()
+  .optional();
+
 const productSchema = z.object({
   id: z.string().optional(),
   brand: z.string().trim().min(1, "Brand is required"),
@@ -34,6 +39,9 @@ const productSchema = z.object({
   refUrl: optionalText,
   note: optionalText,
   lowStockAt: z.coerce.number().int().min(0).default(2),
+  weightG: z.coerce.number().int("Weight must be whole grams").positive("Weight must be more than 0 g").default(1000),
+  printTempMin: optionalTemp,
+  printTempMax: optionalTemp,
   // Only used when creating: opening stock with its ต้นทุนต่อม้วน.
   openingQty: z.coerce.number().int().min(0).default(0),
   openingCostSgd: z.coerce.number().min(0).default(0),
@@ -55,6 +63,8 @@ export async function saveProduct(input: ProductInput) {
   return run(async () => {
     await requireAdmin();
     const { id, openingQty, openingCostSgd, ...data } = productSchema.parse(input);
+    if (data.printTempMin != null && data.printTempMax != null && data.printTempMin > data.printTempMax)
+      throw new UserError("Print temp: the lower end is above the upper end");
     await assertInCatalog(data.brand, data.type);
 
     const product = id
@@ -155,6 +165,9 @@ const bulkEditSchema = z.object({
   // Each field is optional — only the ones given are changed.
   sellPriceSgd: z.coerce.number().min(0, "Price can't be negative").optional(),
   lowStockAt: z.coerce.number().int("Alert must be a whole number").min(0).optional(),
+  weightG: z.coerce.number().int("Weight must be whole grams").positive("Weight must be more than 0 g").optional(),
+  printTempMin: optionalTemp,
+  printTempMax: optionalTemp,
   refUrl: optionalText,
   note: optionalText,
 });
@@ -166,6 +179,8 @@ export async function bulkUpdateProducts(input: z.input<typeof bulkEditSchema>) 
     const { ids, ...data } = bulkEditSchema.parse(input);
     const changes = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
     if (!Object.keys(changes).length) throw new UserError("Nothing to change");
+    if (data.printTempMin != null && data.printTempMax != null && data.printTempMin > data.printTempMax)
+      throw new UserError("Print temp: the lower end is above the upper end");
 
     const { count } = await prisma.product.updateMany({ where: { id: { in: ids } }, data: changes });
     revalidatePath("/backstore", "layout");

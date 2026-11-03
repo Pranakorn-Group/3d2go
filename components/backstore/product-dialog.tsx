@@ -31,6 +31,9 @@ type Form = {
   sku: string;
   sellPriceSgd: string;
   lowStockAt: string;
+  weightG: string;
+  printTempMin: string;
+  printTempMax: string;
   refUrl: string;
   note: string;
   openingQty: string;
@@ -46,6 +49,9 @@ function initial(p?: ProductDTO): Form {
     sku: p?.sku ?? "",
     sellPriceSgd: p ? String(p.sellPriceSgd) : "",
     lowStockAt: String(p?.lowStockAt ?? 2),
+    weightG: String(p?.weightG ?? 1000),
+    printTempMin: p?.printTempMin == null ? "" : String(p.printTempMin),
+    printTempMax: p?.printTempMax == null ? "" : String(p.printTempMax),
     refUrl: p?.refUrl ?? "",
     note: p?.note ?? "",
     openingQty: "0",
@@ -201,6 +207,20 @@ export function ProductDialog({
                 <Field>
                   <FieldLabel htmlFor="low">Low-stock alert at</FieldLabel>
                   <Input id="low" type="number" inputMode="numeric" min="0" value={form.lowStockAt} onChange={set("lowStockAt")} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field>
+                  <FieldLabel htmlFor="weight">Roll weight (g)</FieldLabel>
+                  <Input id="weight" type="number" inputMode="numeric" min="1" value={form.weightG} onChange={set("weightG")} />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="tmin">Print temp (°C)</FieldLabel>
+                  <div className="flex items-center gap-1.5">
+                    <Input id="tmin" type="number" inputMode="numeric" min="0" placeholder="190" value={form.printTempMin} onChange={set("printTempMin")} />
+                    <span className="text-muted-foreground">–</span>
+                    <Input aria-label="Print temp, upper end" type="number" inputMode="numeric" min="0" placeholder="220" value={form.printTempMax} onChange={set("printTempMax")} />
+                  </div>
                 </Field>
               </div>
               <Field>

@@ -16,6 +16,7 @@ import {
   Pencil,
   PencilLine,
   Plus,
+  QrCode,
   Search,
   SlidersHorizontal,
   Tags,
@@ -215,6 +216,11 @@ export function StockView({
         <Button asChild variant="outline">
           <Link href="/backstore/stock/catalog">
             <Tags /> Brands & types
+          </Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/backstore/stock/labels">
+            <QrCode /> Roll labels
           </Link>
         </Button>
         <BulkAddDialog

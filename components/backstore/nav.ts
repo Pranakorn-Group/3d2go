@@ -1,4 +1,4 @@
-import { Cylinder, LayoutDashboard, Package, ReceiptText, ScanLine, ShoppingCart, Tags, Truck, Users, type LucideIcon } from "lucide-react";
+import { Cylinder, LayoutDashboard, Package, QrCode, ReceiptText, ScanLine, ShoppingCart, Tags, Truck, Users, type LucideIcon } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon };
 
@@ -16,6 +16,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/backstore/stock", label: "Stock", icon: Package },
       { href: "/backstore/stock/catalog", label: "Brands & Types", icon: Tags },
+      { href: "/backstore/stock/labels", label: "Roll labels", icon: QrCode },
       { href: "/backstore/orders", label: "Purchase Orders", icon: Truck },
     ],
   },

@@ -20,8 +20,8 @@ import { formatSGD } from "@/lib/money";
 import type { ProductDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type Key = "sellPriceSgd" | "lowStockAt" | "refUrl" | "note";
-type Form = Record<Key, string>;
+type Key = "sellPriceSgd" | "lowStockAt" | "weightG" | "printTemp" | "refUrl" | "note";
+type Form = Record<Exclude<Key, "printTemp">, string> & { printTempMin: string; printTempMax: string };
 
 /** Shared value when every product agrees, otherwise blank. */
 function common(products: ProductDTO[], get: (p: ProductDTO) => string) {
@@ -33,6 +33,9 @@ function initial(products: ProductDTO[]): Form {
   return {
     sellPriceSgd: common(products, (p) => String(p.sellPriceSgd)),
     lowStockAt: common(products, (p) => String(p.lowStockAt)),
+    weightG: common(products, (p) => String(p.weightG)),
+    printTempMin: common(products, (p) => String(p.printTempMin ?? "")),
+    printTempMax: common(products, (p) => String(p.printTempMax ?? "")),
     refUrl: common(products, (p) => p.refUrl ?? ""),
     note: common(products, (p) => p.note ?? ""),
   };
@@ -66,15 +69,17 @@ export function BulkEditDialog({
   const [enabled, setEnabled] = useState<Record<Key, boolean>>({
     sellPriceSgd: true,
     lowStockAt: false,
+    weightG: false,
+    printTemp: false,
     refUrl: false,
     note: false,
   });
   const [pending, startTransition] = useTransition();
 
-  const set = (k: Key) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const value = e.target.value;
     setForm((f) => ({ ...f, [k]: value }));
-    setEnabled((s) => ({ ...s, [k]: true }));
+    setEnabled((s) => ({ ...s, [k.startsWith("printTemp") ? "printTemp" : k]: true }));
   };
   const enable = (k: Key) => (v: boolean) => setEnabled((s) => ({ ...s, [k]: v }));
   const toggle = (id: string) =>
@@ -96,6 +101,9 @@ export function BulkEditDialog({
         ids: [...selected],
         sellPriceSgd: enabled.sellPriceSgd ? form.sellPriceSgd : undefined,
         lowStockAt: enabled.lowStockAt ? form.lowStockAt || 0 : undefined,
+        weightG: enabled.weightG ? form.weightG : undefined,
+        printTempMin: enabled.printTemp ? form.printTempMin : undefined,
+        printTempMax: enabled.printTemp ? form.printTempMax : undefined,
         refUrl: enabled.refUrl ? form.refUrl : undefined,
         note: enabled.note ? form.note : undefined,
       });
@@ -145,6 +153,26 @@ export function BulkEditDialog({
                   value={form.lowStockAt}
                   onChange={set("lowStockAt")}
                 />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field>
+                <div className="flex items-center gap-2">
+                  <Toggle id="be-weight-on" checked={enabled.weightG} onChange={enable("weightG")} />
+                  <FieldLabel htmlFor="be-weight">Roll weight (g)</FieldLabel>
+                </div>
+                <Input id="be-weight" type="number" inputMode="numeric" min="1" placeholder="Mixed" value={form.weightG} onChange={set("weightG")} />
+              </Field>
+              <Field>
+                <div className="flex items-center gap-2">
+                  <Toggle id="be-temp-on" checked={enabled.printTemp} onChange={enable("printTemp")} />
+                  <FieldLabel htmlFor="be-tmin">Print temp (°C)</FieldLabel>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Input id="be-tmin" type="number" inputMode="numeric" min="0" placeholder="Min" value={form.printTempMin} onChange={set("printTempMin")} />
+                  <span className="text-muted-foreground">–</span>
+                  <Input aria-label="Print temp, upper end" type="number" inputMode="numeric" min="0" placeholder="Max" value={form.printTempMax} onChange={set("printTempMax")} />
+                </div>
               </Field>
             </div>
             <Field>
