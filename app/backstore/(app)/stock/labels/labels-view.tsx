@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
-import { ArrowLeft, FlaskConical, ListChecks, Printer, RotateCcw, Save, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, FlaskConical, ListChecks, PackageCheck, Printer, RotateCcw, Save, Search, Trash2 } from "lucide-react";
 import { ColorSwatch } from "@/components/backstore/color-swatch";
 import { EmptyState } from "@/components/backstore/empty-state";
 import { PageHeader } from "@/components/backstore/page-header";
@@ -90,7 +90,11 @@ function paginate(placed: Placed<SheetItem>[], layout: ReturnType<typeof sheetLa
   return { pages, skipped };
 }
 
-export function LabelsView({ products, presets }: { products: ProductDTO[]; presets: LabelPresetDTO[] }) {
+/**
+ * `labeled`: per product, printed labels not sold yet — the rolls in stock that already have one (or will,
+ * once pre-printed labels go on).
+ */
+export function LabelsView({ products, presets, labeled }: { products: ProductDTO[]; presets: LabelPresetDTO[]; labeled: Record<string, number> }) {
   const mounted = useMounted();
   const [form, setForm] = useState<Form>(DEFAULTS);
   const [loaded, setLoaded] = useState(false);
@@ -184,6 +188,13 @@ export function LabelsView({ products, presets }: { products: ProductDTO[]; pres
   }
 
   const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement>) => patch({ [k]: e.target.value });
+  /** Rolls in stock without a label yet. */
+  const unlabeled = (p: ProductDTO) => Math.max(0, p.stockQty - (labeled[p.id] ?? 0));
+  /** Sets the shown filament's counts (blank for 0). */
+  const fillShown = (n: (p: ProductDTO) => number) => {
+    setRun(null);
+    setQty((m) => ({ ...m, ...Object.fromEntries(shown.map((p) => [p.id, n(p) > 0 ? String(n(p)) : ""])) }));
+  };
   const setQtyFor = (id: string, v: string) => {
     setRun(null);
     setQty((m) => ({ ...m, [id]: v }));
@@ -291,7 +302,7 @@ export function LabelsView({ products, presets }: { products: ProductDTO[]; pres
             <Card>
               <CardHeader>
                 <CardTitle>Filament</CardTitle>
-                <CardDescription>How many labels for each color — not limited by stock.</CardDescription>
+                <CardDescription>How many labels for each color — fill from stock, or any number to pre-print.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3">
                 <InputGroup>
@@ -303,21 +314,34 @@ export function LabelsView({ products, presets }: { products: ProductDTO[]; pres
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-muted-foreground">Set all {q ? "shown" : ""} to</span>
                   <Input type="number" inputMode="numeric" min="0" className="h-8 w-16" value={each} onChange={(e) => setEach(e.target.value)} />
+                  <Button size="sm" variant="outline" onClick={() => fillShown(() => Math.max(0, Math.floor(Number(each) || 0)))}>
+                    Apply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto"
+                    disabled={!total}
+                    onClick={() => {
+                      setRun(null);
+                      setQty({});
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">From stock{q ? " (shown)" : ""}:</span>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => {
-                      setRun(null);
-                      setQty((m) => ({ ...m, ...Object.fromEntries(shown.map((p) => [p.id, each])) }));
-                    }}
+                    title="Labels for the rolls in stock that don't have one yet (stock minus printed, unsold labels)"
+                    onClick={() => fillShown(unlabeled)}
                   >
-                    Apply
+                    <PackageCheck /> Unlabeled rolls · {shown.reduce((s, p) => s + unlabeled(p), 0)}
                   </Button>
-                  <Button size="sm" variant="ghost" className="ml-auto" disabled={!total} onClick={() => {
-                      setRun(null);
-                      setQty({});
-                    }}>
-                    Clear
+                  <Button size="sm" variant="ghost" title="One label for every roll in stock" onClick={() => fillShown((p) => p.stockQty)}>
+                    Every roll · {shown.reduce((s, p) => s + p.stockQty, 0)}
                   </Button>
                 </div>
                 {products.length === 0 ? (
@@ -333,6 +357,7 @@ export function LabelsView({ products, presets }: { products: ProductDTO[]; pres
                           </div>
                           <div className="truncate font-mono text-xs text-muted-foreground">
                             {p.sku} · {p.stockQty} in stock
+                            {labeled[p.id] ? ` · ${labeled[p.id]} labeled` : ""}
                           </div>
                         </div>
                         <Input
