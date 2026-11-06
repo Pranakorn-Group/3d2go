@@ -171,23 +171,7 @@
   }
 }
 
-/* Label sheets: only the element marked .print-area is printed, without the backstore chrome around it. */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  .print-area,
-  .print-area * {
-    visibility: visible;
-  }
-  .print-area {
-    position: absolute;
-    inset: 0 auto auto 0;
-    width: 100%;
-  }
-}
-
-/* Roll label sheets (Stock → Roll labels) are portalled straight under <body> and printed alone, edge to edge on A4,
+/* Label sheets (Stock → Roll labels, filament2go → Spool labels) are portalled straight under <body> and printed alone, edge to edge on A4,
    so every label lands where the layout put it in mm. The page's own <style> sets `@page { margin: 0 }` while it's
    open (a named @page isn't supported everywhere, and the default paper margins would push each sheet onto two pages). */
 .label-sheets {

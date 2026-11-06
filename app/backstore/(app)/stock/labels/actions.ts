@@ -6,7 +6,8 @@ import { run, UserError } from "@/lib/action";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
-import { isValidSerial, normalizeSerial, randomSerial } from "@/lib/labels";
+import { findShelfLabel, ON_SHELF } from "@/lib/label-lookup";
+import { randomSerial } from "@/lib/labels";
 
 /** Most labels one print run may create (about 70 A4 sheets of small labels). */
 const MAX_LABELS = 2000;
@@ -62,22 +63,11 @@ async function freshSerials(tx: Prisma.TransactionClient, count: number) {
   return [...picked];
 }
 
-/** The product behind a scanned label, for the POS. Refuses labels already sold or held by a reservation. */
+/** The product behind a scanned label, for the POS. Refuses labels already sold, reserved or opened as a spool. */
 export async function lookupLabel(serial: string) {
   return run(async () => {
     await requireAdmin();
-    const raw = z.string().trim().toUpperCase().min(1, "Empty scan").parse(serial);
-    // Labels printed before random serials (SKU-0001) are looked up as they are.
-    const s = (await prisma.productLabel.findUnique({ where: { serial: raw }, select: { id: true } })) ? raw : normalizeSerial(raw);
-    if (s !== raw && !isValidSerial(s)) throw new UserError(`${raw} isn't a valid label serial — misread? Scan again`);
-    const label = await prisma.productLabel.findUnique({
-      where: { serial: s },
-      select: { serial: true, productId: true, soldAt: true, sale: { select: { code: true, status: true } } },
-    });
-    if (!label) throw new UserError(`${s} isn't a label we printed`);
-    if (label.soldAt) throw new UserError(`${s} was already sold${label.sale ? ` (${label.sale.code})` : ""}`);
-    if (label.sale) throw new UserError(`${s} is held by reservation ${label.sale.code}`);
-    return { serial: label.serial, productId: label.productId };
+    return findShelfLabel(z.string().parse(serial));
   });
 }
 
@@ -93,6 +83,7 @@ export async function saveLabelPreset(input: z.input<typeof presetSchema>) {
     const { name, settings } = presetSchema.parse(input);
     const preset = await prisma.labelPreset.upsert({ where: { name }, create: { name, settings }, update: { settings } });
     revalidatePath("/backstore/stock/labels");
+    revalidatePath("/backstore/spools/labels");
     return { id: preset.id, name: preset.name };
   });
 }
@@ -102,6 +93,7 @@ export async function deleteLabelPreset(id: string) {
     await requireAdmin();
     await prisma.labelPreset.delete({ where: { id: z.string().parse(id) } });
     revalidatePath("/backstore/stock/labels");
+    revalidatePath("/backstore/spools/labels");
   });
 }
 
@@ -113,8 +105,8 @@ export async function deleteLabels(ids: string[]) {
   return run(async () => {
     await requireAdmin();
     const list = z.array(z.string()).min(1, "Pick at least one label").max(1000).parse(ids);
-    const { count } = await prisma.productLabel.deleteMany({ where: { id: { in: list }, saleId: null, soldAt: null } });
-    if (!count) throw new UserError("Only labels that aren't sold or reserved can be removed");
+    const { count } = await prisma.productLabel.deleteMany({ where: { id: { in: list }, ...ON_SHELF } });
+    if (!count) throw new UserError("Only labels that aren't sold, reserved or opened as a spool can be removed");
     revalidatePath("/backstore/stock/labels/printed");
     return { removed: count, kept: list.length - count };
   });

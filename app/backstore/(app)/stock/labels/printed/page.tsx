@@ -16,11 +16,15 @@ export const metadata: Metadata = { title: "Printed labels" };
 
 const PER_PAGE = 100;
 
-/** A label is on the shelf until a sale or reservation claims it (saleId), and sold once soldAt is set. */
+/**
+ * A label is on the shelf until a sale or reservation claims it (saleId) or its roll is opened as a
+ * filament2go spool (spoolId), and sold once soldAt is set.
+ */
 const TABS = [
-  { key: "unsold", label: "Not sold", where: { saleId: null, soldAt: null } },
+  { key: "unsold", label: "Not sold", where: { saleId: null, soldAt: null, spoolId: null } },
   { key: "held", label: "Reserved", where: { saleId: { not: null }, soldAt: null } },
   { key: "sold", label: "Sold", where: { soldAt: { not: null } } },
+  { key: "spool", label: "Opened as spool", where: { spoolId: { not: null } } },
   { key: "all", label: "All", where: {} },
 ] as const satisfies readonly { key: string; label: string; where: Prisma.ProductLabelWhereInput }[];
 
@@ -34,7 +38,7 @@ function href(params: Params) {
 
 export default async function PrintedLabelsPage({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams;
-  const tab = TABS.find((t) => t.key === params.tab) ?? TABS[3];
+  const tab = TABS.find((t) => t.key === params.tab) ?? TABS[TABS.length - 1];
   const q = params.q?.trim() ?? "";
   const page = Math.max(1, Math.floor(Number(params.page) || 1));
 
@@ -52,7 +56,7 @@ export default async function PrintedLabelsPage({ searchParams }: { searchParams
   const [rows, total, counts] = await Promise.all([
     prisma.productLabel.findMany({
       where: { AND: [tab.where, search] },
-      include: { product: { select: productSummarySelect }, sale: { select: { code: true } } },
+      include: { product: { select: productSummarySelect }, sale: { select: { code: true } }, spool: { select: { serial: true } } },
       orderBy: [{ printedAt: "desc" }, { seq: "desc" }],
       skip: (page - 1) * PER_PAGE,
       take: PER_PAGE,
@@ -115,6 +119,7 @@ export default async function PrintedLabelsPage({ searchParams }: { searchParams
               printedAt: l.printedAt.toISOString(),
               soldAt: l.soldAt?.toISOString() ?? null,
               saleCode: l.sale?.code ?? null,
+              spoolSerial: l.spool?.serial ?? null,
               product: l.product,
             }))}
           />

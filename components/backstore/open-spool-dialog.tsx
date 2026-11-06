@@ -3,8 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { Camera, PackageOpen, X } from "lucide-react";
 import { openSpool } from "@/app/backstore/(app)/spools/actions";
+import { lookupLabel } from "@/app/backstore/(app)/stock/labels/actions";
 import { ProductPicker } from "@/components/backstore/product-picker";
+import { QrScanner } from "@/components/backstore/qr-scanner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,29 +34,46 @@ function specForm(spec: SpoolSpecDTO | undefined): Pick<Form, "netG" | "tareG" |
   };
 }
 
-/** Weighs in a full roll, gives it a serial and opens its page (to print the QR label). */
+/** A roll's box label (printed on Stock → Roll labels), scanned to say which roll is being opened. */
+export type BoxLabel = { serial: string; productId: string };
+
+/**
+ * Weighs in a full roll, gives it a serial and opens its page (to print the QR label). Scanning the roll's
+ * box label picks the filament and links the label to the spool, so it can't be sold or opened again.
+ * `label`: a box label already scanned (from Scan & weigh).
+ */
 export function OpenSpoolDialog({
   products,
   specs,
   open,
   onOpenChange,
+  label: scanned = null,
 }: {
   products: ProductDTO[];
   specs: Record<string, SpoolSpecDTO>;
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  label?: BoxLabel | null;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<Form>({ productId: "", grossG: "", note: "", ...specForm(undefined) });
   const [fromStock, setFromStock] = useState(true);
+  const [label, setLabel] = useState<BoxLabel | null>(null);
+  const [boxText, setBoxText] = useState("");
+  const [camera, setCamera] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [looking, startLooking] = useTransition();
   const [prevOpen, setPrevOpen] = useState(open);
 
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
-      setForm({ productId: "", grossG: "", note: "", ...specForm(undefined) });
+      const p = scanned && products.find((x) => x.id === scanned.productId);
+      setForm({ productId: p ? p.id : "", grossG: "", note: "", ...specForm(p ? specs[key(p)] : undefined) });
       setFromStock(true);
+      setLabel(p ? scanned : null);
+      setBoxText("");
+      setCamera(false);
     }
   }
 
@@ -70,6 +90,24 @@ export function OpenSpoolDialog({
     const p = products.find((x) => x.id === productId);
     setForm((f) => ({ ...f, productId, ...specForm(p && specs[key(p)]) }));
     if (p && available(p) < 1) setFromStock(false);
+    // A box label belongs to one filament; picking another one by hand drops it.
+    if (label && label.productId !== productId) setLabel(null);
+  }
+
+  function scanBox(text: string) {
+    if (!text.trim() || looking) return;
+    startLooking(async () => {
+      const res = await lookupLabel(text);
+      if (!res.ok) return void toast.error(res.error);
+      const p = products.find((x) => x.id === res.data.productId);
+      if (!p) return void toast.error(`${res.data.serial}: that filament isn't active (archived?)`);
+      setForm((f) => ({ ...f, productId: p.id, ...specForm(specs[key(p)]) }));
+      // The box was on the shelf, so the roll is counted in stock.
+      setFromStock(true);
+      setLabel(res.data);
+      setBoxText("");
+      setCamera(false);
+    });
   }
 
   function submit(e: React.FormEvent) {
@@ -82,6 +120,7 @@ export function OpenSpoolDialog({
         fromStock,
         saveSpec: Boolean(specChanged),
         note: form.note,
+        labelSerial: label?.serial,
       });
       if (!res.ok) return void toast.error(res.error);
       toast.success(`Opened ${res.data} — print its label`);
@@ -95,10 +134,57 @@ export function OpenSpoolDialog({
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Open a spool</DialogTitle>
-          <DialogDescription>Weigh a full roll on its reel. It gets a serial and a QR label for filament2go.</DialogDescription>
+          <DialogDescription>Scan the roll&apos;s box, then weigh it on its reel. It gets a serial and a QR label for filament2go.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit}>
           <FieldGroup className="gap-4">
+            <Field>
+              <FieldLabel htmlFor="boxLabel">Box label</FieldLabel>
+              {label ? (
+                <div className="flex items-center gap-2 rounded-md border bg-accent/60 px-3 py-2 text-sm">
+                  <PackageOpen className="size-4 shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1 truncate">
+                    Box <span className="font-mono font-medium">{label.serial}</span> — taken off the shelf when opened
+                  </span>
+                  <Button type="button" variant="ghost" size="icon" className="size-7" aria-label="Remove box label" onClick={() => setLabel(null)}>
+                    <X />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-1.5">
+                    {/* USB / Bluetooth scanners type the code and press Enter. */}
+                    <Input
+                      id="boxLabel"
+                      autoFocus
+                      className="font-mono"
+                      placeholder="Scan the box's QR label"
+                      value={boxText}
+                      onChange={(e) => setBoxText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        scanBox(boxText);
+                      }}
+                    />
+                    <Button type="button" variant="outline" disabled={looking || !boxText.trim()} onClick={() => scanBox(boxText)}>
+                      {looking ? "…" : "Find"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={camera ? "secondary" : "outline"}
+                      size="icon"
+                      aria-label={camera ? "Close camera" : "Scan with camera"}
+                      onClick={() => setCamera((c) => !c)}
+                    >
+                      <Camera />
+                    </Button>
+                  </div>
+                  {camera && <QrScanner onScan={scanBox} paused={looking} />}
+                  <FieldDescription>Optional — or pick the filament below for a roll without a label.</FieldDescription>
+                </>
+              )}
+            </Field>
             <Field>
               <FieldLabel>Filament</FieldLabel>
               <ProductPicker products={products} value={form.productId} onChange={pick} />

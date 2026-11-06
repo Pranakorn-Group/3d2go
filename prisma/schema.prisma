@@ -197,9 +197,12 @@ model ProductLabel {
   printedAt DateTime  @default(now())
   saleId    String?
   soldAt    DateTime?
+  /// The filament2go spool this roll was opened as (its box label scanned when opening). Off the shelf from then on.
+  spoolId   String?   @unique
 
   product Product @relation(fields: [productId], references: [id])
   sale    Sale?   @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  spool   Spool?  @relation(fields: [spoolId], references: [id], onDelete: SetNull)
 
   @@unique([productId, seq])
   @@index([saleId])
@@ -248,8 +251,10 @@ model Spool {
   openedAt    DateTime    @default(now())
   emptiedAt   DateTime?
 
-  product Product     @relation(fields: [productId], references: [id])
+  product Product       @relation(fields: [productId], references: [id])
   loans   SpoolLoan[]
+  /// The roll's box label, when it was scanned to open the spool.
+  label   ProductLabel?
 
   @@index([status, openedAt])
   @@index([productId])

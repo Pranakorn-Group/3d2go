@@ -3,7 +3,8 @@ import { DIAMETER_MM } from "@/lib/spool";
 import type { ProductDTO } from "@/lib/types";
 
 export type LabelProduct = Pick<ProductDTO, "brand" | "type" | "color" | "colorHex" | "sku" | "weightG" | "printTempMin" | "printTempMax">;
-export type SheetItem = { serial: string; product: LabelProduct };
+/** `spec` replaces the "Ø 1.75 mm · 1 kg" line (spool labels show the reel weight there). */
+export type SheetItem = { serial: string; product: LabelProduct; spec?: string };
 export type Guides = "none" | "cross" | "line";
 
 const mm = (n: number) => `${n}mm`;
@@ -31,7 +32,7 @@ type Body = ReturnType<typeof bodyLayout>;
  * under the QR code, sized to its width; the details shrink as a block to fit the height, then line by line to
  * fit the width — no "…" unless tiny.
  */
-function bodyLayout(p: LabelProduct, serial: string, w: number, bh: number, tall: boolean, pad: number, base: number, logo: boolean, partner: boolean) {
+function bodyLayout(p: LabelProduct, serial: string, specOverride: string | undefined, w: number, bh: number, tall: boolean, pad: number, base: number, logo: boolean, partner: boolean) {
   const fitSerial = (width: number) => Math.max(1.2, Math.min(base * 0.8, width / (serial.length * 0.62)));
   const serialRow = fitSerial(w * 0.36) * 1.3;
   const qrSize = Math.max(0, tall ? Math.min(w - 2 * pad, bh * 0.5 - serialRow) : Math.min(bh - 2 * pad - serialRow, w * 0.36));
@@ -43,7 +44,7 @@ function bodyLayout(p: LabelProduct, serial: string, w: number, bh: number, tall
   const showPartner = partnerH >= PARTNER_MIN_H;
 
   const temp = formatTemp(p.printTempMin, p.printTempMax);
-  const spec = `Ø ${DIAMETER_MM} mm · ${formatWeight(p.weightG)}`;
+  const spec = specOverride ?? `Ø ${DIAMETER_MM} mm · ${formatWeight(p.weightG)}`;
   const textW = tall ? w - 2 * pad : w - 3 * pad - qrSize;
   const textH = tall ? bh - 3 * pad - qrSize - serialRow - (showPartner ? partnerH + serialFs * 0.25 : 0) : bh - 2 * pad;
   // Line heights in units of the base size: logo, brand, type, color, spec, temp (1.2 line height, 0.15 gaps).
@@ -75,7 +76,7 @@ function RollLabel({
   const tall = h > w * 1.15;
   const pad = Math.min(3, Math.max(1, Math.min(w, h) * 0.06));
   const base = Math.min(4.2, Math.max(1.6, (tall ? w : h) * 0.085));
-  const layout = (bh: number) => bodyLayout(p, item.serial, w, bh, tall, pad, base, logo, partner);
+  const layout = (bh: number) => bodyLayout(p, item.serial, item.spec, w, bh, tall, pad, base, logo, partner);
 
   // Footer: the color band (edge to edge), then the slogan. The band always gets its height; the slogan only
   // when the details keep their size and the QR code shrinks by at most a fifth.

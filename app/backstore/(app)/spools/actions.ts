@@ -6,6 +6,7 @@ import { run, UserError } from "@/lib/action";
 import { requireAdmin } from "@/lib/auth";
 import { nextSpoolSerial } from "@/lib/codes";
 import { prisma } from "@/lib/db";
+import { findShelfLabel, ON_SHELF } from "@/lib/label-lookup";
 import { checkOpening, checkWeighIn, checkWeighOut, EMPTY_AT_G, filamentCost, loanCharge, remainingG, serialFromScan } from "@/lib/spool";
 import { getLendRate } from "@/lib/spools";
 
@@ -52,13 +53,15 @@ const openSchema = specSchema.extend({
   /** Also save net / reel / density as the default for this brand + type. */
   saveSpec: z.boolean().default(false),
   note: optionalText,
+  /** The roll's box label, when it was scanned: it's linked to the spool and leaves the shelf. */
+  labelSerial: optionalText,
 });
 
 /** Opens a roll for lending: weighs it, gives it a serial (for its QR label) and takes it out of stock. */
 export async function openSpool(input: z.input<typeof openSchema>) {
   return run(async () => {
     await requireAdmin();
-    const { productId, grossG, fromStock, saveSpec, note, ...w } = openSchema.parse(input);
+    const { productId, grossG, fromStock, saveSpec, note, labelSerial, ...w } = openSchema.parse(input);
     const problem = checkOpening(w, grossG);
     if (problem) throw new UserError(problem);
 
@@ -87,6 +90,11 @@ export async function openSpool(input: z.input<typeof openSchema>) {
           },
         });
       }
+      if (labelSerial) {
+        // Claimed only while still on the shelf, so a box scanned twice (or sold meanwhile) can't open twice.
+        const { count } = await tx.productLabel.updateMany({ where: { serial: labelSerial, productId, ...ON_SHELF }, data: { spoolId: spool.id } });
+        if (!count) throw new UserError(`Box label ${labelSerial} was already used — scan it again`);
+      }
       if (saveSpec) {
         await tx.spoolSpec.upsert({
           where: { brand_type: { brand: p.brand, type: p.type } },
@@ -102,14 +110,20 @@ export async function openSpool(input: z.input<typeof openSchema>) {
   });
 }
 
-/** The spool a scanned QR code / typed serial points to. */
-export async function findSpool(text: string) {
+/**
+ * What a scan on the Scan & weigh page points to: a spool's QR label (its serial), or a roll's box label
+ * still on the shelf (to open that roll as a spool).
+ */
+export async function resolveScan(text: string) {
   return run(async () => {
     await requireAdmin();
-    const serial = serialFromScan(z.string().min(1, "Scan or type a serial").parse(text));
+    const value = z.string().trim().min(1, "Scan or type a serial").parse(text);
+    const serial = serialFromScan(value);
     const spool = await prisma.spool.findUnique({ where: { serial }, select: { serial: true } });
-    if (!spool) throw new UserError(`No spool ${serial}`);
-    return spool.serial;
+    if (spool) return { kind: "spool" as const, serial: spool.serial };
+    if (/^SP-/i.test(serial)) throw new UserError(`No spool ${serial}`);
+    const label = await findShelfLabel(value);
+    return { kind: "label" as const, ...label };
   });
 }
 

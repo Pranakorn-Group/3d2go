@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import toast from "react-hot-toast";
 import { Trash2 } from "lucide-react";
 import { ProductLabel } from "@/components/backstore/color-swatch";
@@ -30,11 +31,13 @@ export type PrintedLabelRow = {
   printedAt: string;
   soldAt: string | null;
   saleCode: string | null;
+  /** The filament2go spool the roll was opened as. */
+  spoolSerial: string | null;
   product: Pick<ProductDTO, "brand" | "type" | "color" | "colorHex" | "sku">;
 };
 
-/** Only labels no sale or reservation holds can be removed. */
-const removable = (l: PrintedLabelRow) => !l.soldAt && !l.saleCode;
+/** Only labels no sale, reservation or spool holds can be removed. */
+const removable = (l: PrintedLabelRow) => !l.soldAt && !l.saleCode && !l.spoolSerial;
 
 export function PrintedTable({ rows }: { rows: PrintedLabelRow[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -128,7 +131,16 @@ export function PrintedTable({ rows }: { rows: PrintedLabelRow[] }) {
                   {formatDateTime(l.printedAt)} <span className="opacity-70">· #{l.seq}</span>
                 </TableCell>
                 <TableCell>
-                  {l.soldAt ? (
+                  {l.spoolSerial ? (
+                    <div className="grid gap-0.5">
+                      <Badge variant="secondary" className="border-0 bg-sky-500/15 text-sky-700 dark:text-sky-300">
+                        Opened as spool
+                      </Badge>
+                      <Link href={`/backstore/spools/${l.spoolSerial}`} className="font-mono text-xs text-muted-foreground hover:underline">
+                        {l.spoolSerial}
+                      </Link>
+                    </div>
+                  ) : l.soldAt ? (
                     <div className="grid gap-0.5">
                       <Badge variant="secondary" className="border-0 bg-success/15 text-emerald-700 dark:text-emerald-300">
                         Sold

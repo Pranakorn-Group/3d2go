@@ -62,7 +62,7 @@ async function claimLabels(
     if (!serials.length) continue;
     if (serials.length > item.qty) throw new UserError(`${serials.length} labels scanned for ${item.qty} roll${item.qty === 1 ? "" : "s"}`);
     const { count } = await tx.productLabel.updateMany({
-      where: { serial: { in: serials }, productId: item.productId, saleId: null, soldAt: null },
+      where: { serial: { in: serials }, productId: item.productId, saleId: null, soldAt: null, spoolId: null },
       data: { saleId, soldAt: sold ? new Date() : null },
     });
     if (count !== serials.length) throw new UserError("A scanned label was already used or belongs to another filament — scan again");

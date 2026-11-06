@@ -1,67 +1,37 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowLeft, Printer } from "lucide-react";
-import { EmptyState } from "@/components/backstore/empty-state";
-import { PageHeader } from "@/components/backstore/page-header";
-import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/db";
-import { formatDate } from "@/lib/money";
-import { spoolQr } from "@/lib/spools";
-import { PrintButton } from "./print-button";
+import { SpoolLabelsView, type SpoolLabelRow } from "./spool-labels-view";
 
 export const metadata: Metadata = { title: "Spool labels" };
 
-/** QR labels (about 5 × 3 cm) for the spools in ?s=SP-…,SP-…, or every spool in use. */
-export default async function LabelsPage({ searchParams }: { searchParams: Promise<{ s?: string | string[] }> }) {
+/** A4 sheets of QR labels for spools in use. ?s=SP-…,SP-… picks which ones start ticked (else all of them). */
+export default async function SpoolLabelsPage({ searchParams }: { searchParams: Promise<{ s?: string | string[] }> }) {
   const s = (await searchParams).s;
-  const serials = [s ?? []].flat().flatMap((v) => v.split(",")).map((v) => v.trim().toUpperCase()).filter(Boolean);
-  const spools = await prisma.spool.findMany({
-    where: serials.length ? { serial: { in: serials } } : { status: "OPEN" },
-    include: { product: { select: { brand: true, type: true, color: true, colorHex: true } } },
-    orderBy: { serial: "asc" },
-  });
-  const qrs = await Promise.all(spools.map((sp) => spoolQr(sp.serial)));
-
+  const picked = [s ?? []].flat().flatMap((v) => v.split(",")).map((v) => v.trim().toUpperCase()).filter(Boolean);
+  const [spools, presets] = await Promise.all([
+    prisma.spool.findMany({
+      // Spools asked for by serial are listed even when empty, so an old label can be reprinted.
+      where: { OR: [{ status: "OPEN" }, ...(picked.length ? [{ serial: { in: picked } }] : [])] },
+      include: {
+        product: { select: { brand: true, type: true, color: true, colorHex: true, sku: true, weightG: true, printTempMin: true, printTempMax: true } },
+      },
+      orderBy: { serial: "asc" },
+    }),
+    prisma.labelPreset.findMany({ orderBy: { name: "asc" } }),
+  ]);
+  const rows: SpoolLabelRow[] = spools.map((sp) => ({
+    serial: sp.serial,
+    open: sp.status === "OPEN",
+    netG: sp.netG,
+    tareG: sp.tareG,
+    note: sp.note,
+    product: sp.product,
+  }));
   return (
-    <>
-      <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2">
-        <Link href="/backstore/spools">
-          <ArrowLeft /> Spools
-        </Link>
-      </Button>
-      <PageHeader
-        title="Spool labels"
-        description={serials.length ? `${spools.length} label${spools.length === 1 ? "" : "s"}` : `All ${spools.length} spools in use`}
-      >
-        <PrintButton disabled={!spools.length} />
-      </PageHeader>
-      {spools.length === 0 ? (
-        <EmptyState icon={Printer} title="No spools to print" />
-      ) : (
-        <div className="print-area flex flex-wrap gap-2 print:gap-0">
-          {spools.map((sp, i) => (
-            <div
-              key={sp.id}
-              className="flex h-[30mm] w-[50mm] items-center gap-[2mm] overflow-hidden rounded-md border bg-white p-[2mm] text-black print:rounded-none print:border-dashed"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- inline SVG data URL */}
-              <img src={qrs[i]} alt="" className="size-[25mm] shrink-0" />
-              <div className="min-w-0 text-[7pt] leading-tight">
-                <div className="font-mono text-[6.5pt] font-bold whitespace-nowrap">{sp.serial}</div>
-                <div className="mt-[1mm] font-semibold">{sp.product.brand}</div>
-                <div>{sp.product.type}</div>
-                <div className="flex items-center gap-[1mm]">
-                  <span className="inline-block size-[2.5mm] rounded-full border border-black/30" style={{ backgroundColor: sp.product.colorHex ?? "transparent" }} />
-                  <span className="truncate">{sp.product.color}</span>
-                </div>
-                <div className="mt-[1mm] text-[6pt] text-neutral-600">
-                  Reel {sp.tareG} g · {formatDate(sp.openedAt)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
+    <SpoolLabelsView
+      spools={rows}
+      initial={picked.length ? rows.filter((r) => picked.includes(r.serial)).map((r) => r.serial) : rows.map((r) => r.serial)}
+      presets={presets.map((p) => ({ id: p.id, name: p.name, settings: p.settings as Record<string, string | boolean> }))}
+    />
   );
 }

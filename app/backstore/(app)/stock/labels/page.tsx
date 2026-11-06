@@ -12,8 +12,8 @@ export default async function RollLabelsPage() {
       orderBy: [{ brand: "asc" }, { type: "asc" }, { color: "asc" }],
     }),
     prisma.labelPreset.findMany({ orderBy: { name: "asc" } }),
-    // Printed labels not sold yet: on a roll in stock (or waiting to go on one).
-    prisma.productLabel.groupBy({ by: ["productId"], where: { soldAt: null }, _count: true }),
+    // Printed labels not sold or opened as a spool yet: on a roll in stock (or waiting to go on one).
+    prisma.productLabel.groupBy({ by: ["productId"], where: { soldAt: null, spoolId: null }, _count: true }),
   ]);
   return (
     <LabelsView
