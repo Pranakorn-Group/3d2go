@@ -9,6 +9,8 @@ import { round2, weightedAverage } from "@/lib/costing";
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
+const channelEnum = z.enum(["STORE", "SHOPEE", "LAZADA", "TIKTOK", "CAROUSELL", "OTHER"]);
+
 const saleSchema = z
   .object({
     mode: z.enum(["sell", "reserve"]),
@@ -24,6 +26,9 @@ const saleSchema = z
       )
       .min(1, "Cart is empty"),
     discount: z.coerce.number().min(0, "Discount can't be negative").default(0),
+    channel: channelEnum.default("STORE"),
+    platformOrderNo: z.string().trim().optional(),
+    platformFee: z.coerce.number().min(0, "Fee can't be negative").default(0),
     customerName: z.string().trim().optional(),
     phone: z.string().trim().optional(),
     deposit: z.coerce.number().min(0).nullable().optional(),
@@ -76,6 +81,7 @@ export async function createSale(input: SaleInput) {
     const subtotal = round2(s.items.reduce((sum, i) => sum + i.qty * i.unitPrice, 0));
     if (s.discount > subtotal) throw new UserError("Discount is bigger than the subtotal");
     const total = round2(subtotal - s.discount);
+    if (s.channel !== "STORE" && s.platformFee > total) throw new UserError("Platform fee is bigger than the total");
 
     const sale = await prisma.$transaction(async (tx) => {
       const costs = new Map<string, number>();
@@ -101,6 +107,9 @@ export async function createSale(input: SaleInput) {
         data: {
           code: await nextSaleCode(tx),
           status: sell ? "COMPLETED" : "RESERVED",
+          channel: s.channel,
+          platformOrderNo: s.channel === "STORE" ? null : s.platformOrderNo || null,
+          platformFee: s.channel === "STORE" ? 0 : s.platformFee,
           customerName: s.customerName || null,
           phone: s.phone || null,
           deposit: sell ? null : (s.deposit ?? null),
@@ -236,6 +245,35 @@ export async function cancelSale(id: string) {
       await tx.sale.update({ where: { id }, data: { status: "CANCELLED" } });
     });
 
+    revalidatePath("/backstore", "layout");
+  });
+}
+
+const channelSchema = z.object({
+  channel: channelEnum,
+  platformOrderNo: z.string().trim().optional(),
+  platformFee: z.coerce.number().min(0, "Fee can't be negative").default(0),
+});
+
+export type SaleChannelInput = z.input<typeof channelSchema>;
+
+/** Mark where a sale was made after the fact, e.g. an existing sale or reservation that went through Shopee. */
+export async function updateSaleChannel(id: string, input: SaleChannelInput) {
+  return run(async () => {
+    await requireAdmin();
+    const c = channelSchema.parse(input);
+    const sale = await prisma.sale.findUniqueOrThrow({ where: { id } });
+    if (sale.status === "CANCELLED") throw new UserError("Cancelled sales can't be changed");
+    const online = c.channel !== "STORE";
+    if (online && c.platformFee > Number(sale.total)) throw new UserError("Platform fee is bigger than the total");
+    await prisma.sale.update({
+      where: { id },
+      data: {
+        channel: c.channel,
+        platformOrderNo: online ? c.platformOrderNo || null : null,
+        platformFee: online ? c.platformFee : 0,
+      },
+    });
     revalidatePath("/backstore", "layout");
   });
 }

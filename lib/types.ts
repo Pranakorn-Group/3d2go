@@ -23,6 +23,7 @@ export type ProductDTO = {
 export type Currency = "THB" | "SGD";
 export type PurchaseStatus = "PLACED" | "SHIPPED" | "RECEIVED" | "CANCELLED";
 export type SaleStatus = "RESERVED" | "COMPLETED" | "CANCELLED";
+export type SaleChannel = "STORE" | "SHOPEE" | "LAZADA" | "TIKTOK" | "CAROUSELL" | "OTHER";
 
 export type PurchaseItemDTO = {
   id: string;
@@ -62,6 +63,10 @@ export type SaleDTO = {
   id: string;
   code: string;
   status: SaleStatus;
+  channel: SaleChannel;
+  platformOrderNo: string | null;
+  /** Marketplace fees (SGD), taken off profit. */
+  platformFee: number;
   customerName: string | null;
   phone: string | null;
   deposit: number | null;

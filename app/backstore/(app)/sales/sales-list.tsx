@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import toast from "react-hot-toast";
-import { CheckCircle2, ChevronRight, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronRight, Store, XCircle } from "lucide-react";
 import { ProductLabel } from "@/components/backstore/color-swatch";
 import { StatusBadge } from "@/components/backstore/status-badge";
 import {
@@ -27,15 +27,76 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { CHANNELS, channelLabel, isOnline, saleProfit } from "@/lib/channels";
 import { formatDate, formatDateTime, formatSGD } from "@/lib/money";
-import type { SaleDTO } from "@/lib/types";
-import { cancelSale, completeReservation } from "./actions";
+import type { SaleChannel, SaleDTO } from "@/lib/types";
+import { cancelSale, completeReservation, updateSaleChannel } from "./actions";
 
-const profit = (s: SaleDTO) => (s.costTotal === null ? null : s.total - s.costTotal);
+const profit = saleProfit;
+
+export function ChannelBadge({ channel }: { channel: SaleChannel }) {
+  if (!isOnline(channel)) return null;
+  return (
+    <Badge variant="outline" className="border-orange-500/40 text-orange-700 dark:text-orange-300">
+      {channelLabel(channel)}
+    </Badge>
+  );
+}
+
+/** Where the sale was made: switch it to a marketplace (order no. + fees) or back to in store. */
+function ChannelEditor({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
+  const [channel, setChannel] = useState<SaleChannel>(sale.channel === "STORE" ? "SHOPEE" : sale.channel);
+  const [orderNo, setOrderNo] = useState(sale.platformOrderNo ?? "");
+  const [fee, setFee] = useState(sale.platformFee ? String(sale.platformFee) : "");
+  const [pending, startTransition] = useTransition();
+  const online = isOnline(channel);
+
+  const save = () =>
+    startTransition(async () => {
+      const res = await updateSaleChannel(sale.id, { channel, platformOrderNo: orderNo, platformFee: fee || 0 });
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(online ? `${sale.code} marked as sold on ${channelLabel(channel)}` : `${sale.code} set to in store`);
+      onDone();
+    });
+
+  return (
+    <div className="grid gap-2 rounded-lg bg-accent/50 p-3">
+      <Select value={channel} onValueChange={(v) => setChannel(v as SaleChannel)}>
+        <SelectTrigger className="w-full" aria-label="Sales channel">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {CHANNELS.map((c) => (
+            <SelectItem key={c.value} value={c.value}>
+              {c.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {online && (
+        <div className="grid grid-cols-[1fr_8rem] gap-2">
+          <Input aria-label="Order number" placeholder={`${channelLabel(channel)} order no.`} value={orderNo} onChange={(e) => setOrderNo(e.target.value)} />
+          <InputGroup>
+            <InputGroupAddon>Fee</InputGroupAddon>
+            <InputGroupInput aria-label="Platform fee (SGD)" type="number" inputMode="decimal" min="0" step="0.01" placeholder="0" value={fee} onChange={(e) => setFee(e.target.value)} className="text-right tabular-nums" />
+          </InputGroup>
+        </div>
+      )}
+      <Button size="sm" disabled={pending} onClick={save}>
+        {pending ? "Saving…" : "Save"}
+      </Button>
+    </div>
+  );
+}
 
 function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
   const [pending, startTransition] = useTransition();
+  const [editing, setEditing] = useState(false);
   const p = profit(sale);
 
   const act = (fn: () => ReturnType<typeof cancelSale>, msg: string) =>
@@ -50,12 +111,17 @@ function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          {sale.code} <StatusBadge status={sale.status} />
+          {sale.code} <StatusBadge status={sale.status} /> <ChannelBadge channel={sale.channel} />
         </DialogTitle>
         <DialogDescription>
           {formatDateTime(sale.createdAt)}
           {sale.customerName && ` · ${sale.customerName}`}
           {sale.phone && ` · ${sale.phone}`}
+          {sale.platformOrderNo && (
+            <span className="block font-mono text-xs">
+              {channelLabel(sale.channel)} order {sale.platformOrderNo}
+            </span>
+          )}
         </DialogDescription>
       </DialogHeader>
       <ul className="grid gap-3">
@@ -97,6 +163,14 @@ function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
             <dd className="text-right">{formatDate(sale.dueDate)}</dd>
           </>
         )}
+        {sale.platformFee > 0 && (
+          <>
+            <dt className="text-muted-foreground">{channelLabel(sale.channel)} fee</dt>
+            <dd className="text-right tabular-nums">−{formatSGD(sale.platformFee)}</dd>
+            <dt className="text-muted-foreground">Payout</dt>
+            <dd className="text-right tabular-nums">{formatSGD(sale.total - sale.platformFee)}</dd>
+          </>
+        )}
         {p !== null && sale.status === "COMPLETED" && (
           <>
             <dt className="text-muted-foreground">Profit</dt>
@@ -107,6 +181,14 @@ function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
         )}
       </dl>
       {sale.note && <p className="rounded-lg bg-muted px-3 py-2 text-sm">{sale.note}</p>}
+      {sale.status !== "CANCELLED" &&
+        (editing ? (
+          <ChannelEditor sale={sale} onDone={() => setEditing(false)} />
+        ) : (
+          <Button variant="outline" size="sm" className="justify-self-start" onClick={() => setEditing(true)}>
+            <Store /> {isOnline(sale.channel) ? "Edit online order" : "Mark as sold online"}
+          </Button>
+        ))}
 
       {sale.status !== "CANCELLED" && (
         <DialogFooter className="gap-2">
@@ -166,6 +248,7 @@ export function SalesList({ sales }: { sales: SaleDTO[] }) {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{s.code}</span>
                       <StatusBadge status={s.status} />
+                      <ChannelBadge channel={s.channel} />
                       {overdue && <span className="text-xs font-medium text-destructive">Overdue</span>}
                     </div>
                     <div className="mt-0.5 truncate text-sm text-muted-foreground">

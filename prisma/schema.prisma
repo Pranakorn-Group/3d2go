@@ -30,6 +30,16 @@ enum SaleStatus {
   CANCELLED
 }
 
+/// Where a sale was made: at the counter, or an order on an online marketplace.
+enum SaleChannel {
+  STORE
+  SHOPEE
+  LAZADA
+  TIKTOK
+  CAROUSELL
+  OTHER
+}
+
 enum MovementKind {
   RECEIVE
   SALE
@@ -134,26 +144,32 @@ model PurchaseOrderItem {
 }
 
 model Sale {
-  id           String     @id @default(cuid())
-  code         String     @unique
-  status       SaleStatus
-  customerName String?
-  phone        String?
-  deposit      Decimal?   @db.Decimal(12, 2)
-  dueDate      DateTime?
-  subtotal     Decimal    @db.Decimal(12, 2)
-  discount     Decimal    @default(0) @db.Decimal(12, 2)
-  total        Decimal    @db.Decimal(12, 2)
+  id              String      @id @default(cuid())
+  code            String      @unique
+  status          SaleStatus
+  channel         SaleChannel @default(STORE)
+  /// The marketplace's order number (Shopee order SN…), for online sales.
+  platformOrderNo String?
+  /// Marketplace commission + fees taken from the payout (SGD); counts against profit.
+  platformFee     Decimal     @default(0) @db.Decimal(12, 2)
+  customerName    String?
+  phone           String?
+  deposit         Decimal?    @db.Decimal(12, 2)
+  dueDate         DateTime?
+  subtotal        Decimal     @db.Decimal(12, 2)
+  discount        Decimal     @default(0) @db.Decimal(12, 2)
+  total           Decimal     @db.Decimal(12, 2)
   /// Sum of item cost at the time the sale completed.
-  costTotal    Decimal?   @db.Decimal(12, 2)
-  note         String?
-  createdAt    DateTime   @default(now())
-  completedAt  DateTime?
+  costTotal       Decimal?    @db.Decimal(12, 2)
+  note            String?
+  createdAt       DateTime    @default(now())
+  completedAt     DateTime?
 
   items  SaleItem[]
   labels ProductLabel[]
 
   @@index([status, createdAt])
+  @@index([channel])
 }
 
 model SaleItem {

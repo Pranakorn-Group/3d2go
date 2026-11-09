@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { startOfMonthBkk, startOfTodayBkk } from "@/lib/dates";
+import { channelLabel } from "@/lib/channels";
 import { prisma } from "@/lib/db";
 import { formatDate, formatDateTime, formatSGD, rolls as rollCount } from "@/lib/money";
 import { formatPct, summarizeStock, type StockSummary } from "@/lib/profit";
@@ -61,7 +62,7 @@ export default async function DashboardPage() {
     }),
     prisma.sale.aggregate({
       where: { status: "COMPLETED", completedAt: { gte: month } },
-      _sum: { total: true, costTotal: true },
+      _sum: { total: true, costTotal: true, platformFee: true },
       _count: true,
     }),
     prisma.purchaseOrder.findMany({
@@ -91,7 +92,7 @@ export default async function DashboardPage() {
     .filter((p) => p.stockQty - p.reservedQty <= p.lowStockAt)
     .sort((a, b) => a.stockQty - a.reservedQty - (b.stockQty - b.reservedQty));
   const monthRevenue = Number(monthSales._sum.total ?? 0);
-  const monthProfit = monthRevenue - Number(monthSales._sum.costTotal ?? 0);
+  const monthProfit = monthRevenue - Number(monthSales._sum.costTotal ?? 0) - Number(monthSales._sum.platformFee ?? 0);
   const incomingRolls = openPOs.reduce((s, po) => s + po.items.reduce((a, i) => a + i.qty, 0), 0);
   const reservedValue = reservations.reduce((s, r) => s + Number(r.total), 0);
   const stockSummary = summarizeStock(products.map((p) => ({ ...p, avgCostSgd: Number(p.avgCostSgd), sellPriceSgd: Number(p.sellPriceSgd) })));
@@ -349,13 +350,14 @@ export default async function DashboardPage() {
               ) : (
                 <ul className="divide-y">
                   {recentSales.map((s) => {
-                    const profit = Number(s.total) - Number(s.costTotal ?? 0);
+                    const profit = Number(s.total) - Number(s.costTotal ?? 0) - Number(s.platformFee);
                     return (
                       <li key={s.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
                         <div className="min-w-0">
                           <div className="font-medium">{s.code}</div>
                           <div className="truncate text-xs text-muted-foreground">
                             {formatDateTime(s.completedAt)}
+                            {s.channel !== "STORE" && ` · ${channelLabel(s.channel)}`}
                             {s.customerName && ` · ${s.customerName}`}
                           </div>
                         </div>

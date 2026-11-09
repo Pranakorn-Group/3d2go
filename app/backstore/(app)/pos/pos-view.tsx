@@ -17,13 +17,15 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { CHANNELS, channelLabel } from "@/lib/channels";
 import { round2 } from "@/lib/costing";
 import { formatDayMonth, formatSGD, rolls } from "@/lib/money";
-import { available, type ProductDTO } from "@/lib/types";
+import { available, type ProductDTO, type SaleChannel } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Mode = "sell" | "reserve";
@@ -90,6 +92,9 @@ export function PosView({
   const [deposit, setDeposit] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState("");
+  const [channel, setChannel] = useState<SaleChannel>("STORE");
+  const [orderNo, setOrderNo] = useState("");
+  const [fee, setFee] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [qr, setQr] = useState<PayNowRequest | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
@@ -131,6 +136,7 @@ export function PosView({
   const disc = Math.min(Number(discount) || 0, subtotal);
   const total = round2(subtotal - disc);
   const count = cart.reduce((s, l) => s + l.qty, 0);
+  const online = channel !== "STORE";
 
   function add(p: ProductDTO) {
     if (inCart(p.id) >= available(p)) return void toast.error(`Only ${available(p)} available`);
@@ -207,6 +213,9 @@ export function PosView({
     setDeposit("");
     setDueDate("");
     setNote("");
+    // The channel stays: a run of Shopee orders is entered one after another.
+    setOrderNo("");
+    setFee("");
   }
 
   function checkout() {
@@ -220,12 +229,17 @@ export function PosView({
         deposit: deposit !== "" ? deposit : null,
         dueDate: dueDate || null,
         note,
+        channel,
+        platformOrderNo: online ? orderNo : undefined,
+        platformFee: online ? fee || 0 : 0,
       });
       if (!res.ok) return void toast.error(res.error);
-      toast.success(mode === "sell" ? `Sold · ${res.data.code} · ${formatSGD(total)}` : `Reserved for ${customerName} · ${res.data.code}`);
+      const where = online ? ` on ${channelLabel(channel)}` : "";
+      toast.success(mode === "sell" ? `Sold${where} · ${res.data.code} · ${formatSGD(total)}` : `Reserved for ${customerName}${where} · ${res.data.code}`);
       // Straight to the PayNow QR for the bill (or the reservation deposit), referenced by the sale code.
+      // Online orders are paid through the marketplace, so no QR.
       const due = mode === "sell" ? total : Number(deposit) || 0;
-      if (paynow && due > 0) {
+      if (paynow && due > 0 && !online) {
         setQr({ amount: due, reference: res.data.code, title: mode === "sell" ? `Pay ${res.data.code}` : `Deposit · ${res.data.code}` });
       }
       reset();
@@ -249,6 +263,30 @@ export function PosView({
           <BookmarkPlus /> Reserve
         </ToggleGroupItem>
       </ToggleGroup>
+
+      <div className="grid gap-2">
+        <Select value={channel} onValueChange={(v) => setChannel(v as SaleChannel)}>
+          <SelectTrigger className="w-full" aria-label="Sales channel">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CHANNELS.map((c) => (
+              <SelectItem key={c.value} value={c.value}>
+                {c.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {online && (
+          <div className="grid grid-cols-[1fr_8rem] gap-2">
+            <Input aria-label="Order number" placeholder={`${channelLabel(channel)} order no.`} value={orderNo} onChange={(e) => setOrderNo(e.target.value)} />
+            <InputGroup>
+              <InputGroupAddon>Fee</InputGroupAddon>
+              <InputGroupInput aria-label="Platform fee (SGD)" type="number" inputMode="decimal" min="0" step="0.01" placeholder="0" value={fee} onChange={(e) => setFee(e.target.value)} className="text-right tabular-nums" />
+            </InputGroup>
+          </div>
+        )}
+      </div>
 
       {cart.length === 0 ? (
         <p className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">Tap filament to add it</p>
@@ -345,6 +383,12 @@ export function PosView({
           <span className="font-medium">Total</span>
           <span className="text-2xl font-semibold tabular-nums text-primary">{formatSGD(total)}</span>
         </div>
+        {online && Number(fee) > 0 && (
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>Payout after {channelLabel(channel)} fee</span>
+            <span className="tabular-nums">{formatSGD(round2(total - Number(fee)))}</span>
+          </div>
+        )}
       </div>
 
       {mode === "reserve" && (
@@ -381,7 +425,7 @@ export function PosView({
           disabled={!cart.length || pending || (mode === "reserve" && !customerName.trim())}
           onClick={checkout}
         >
-          {pending ? "Saving…" : mode === "sell" ? `Charge ${formatSGD(total)}` : "Reserve rolls"}
+          {pending ? "Saving…" : mode === "sell" ? (online ? `Mark sold on ${channelLabel(channel)}` : `Charge ${formatSGD(total)}`) : "Reserve rolls"}
         </Button>
       </div>
     </div>
@@ -543,6 +587,7 @@ export function PosView({
                 <Button size="lg" className="h-12 w-full justify-between rounded-full px-5 text-base shadow-lg" onClick={() => setSheetOpen(true)}>
                   <span className="flex items-center gap-2">
                     <ShoppingCart /> {rolls(count)}
+                    {online && <span className="text-sm opacity-80">· {channelLabel(channel)}</span>}
                   </span>
                   <span className="tabular-nums">{formatSGD(total)}</span>
                 </Button>
