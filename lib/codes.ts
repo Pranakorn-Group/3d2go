@@ -1,6 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { bkkStamp } from "@/lib/dates";
+import { randomSpoolSerial } from "@/lib/spool";
 
 async function next(
   prefix: string,
@@ -23,10 +24,11 @@ export function nextSaleCode(tx: Prisma.TransactionClient) {
   );
 }
 
-export function nextSpoolSerial(tx: Prisma.TransactionClient) {
-  return next(`SP-${bkkStamp(true)}-`, (prefix) =>
-    tx.spool.findFirst({ where: { serial: { startsWith: prefix } }, orderBy: { serial: "desc" }, select: { serial: true } }).then(
-      (s) => s && { code: s.serial },
-    ),
-  );
+/** A random, unused spool serial (SP + 4 digits + check digit). */
+export async function nextSpoolSerial(tx: Prisma.TransactionClient) {
+  for (let i = 0; i < 50; i++) {
+    const serial = randomSpoolSerial();
+    if (!(await tx.spool.findUnique({ where: { serial }, select: { id: true } }))) return serial;
+  }
+  throw new Error("Couldn't find a free spool serial");
 }

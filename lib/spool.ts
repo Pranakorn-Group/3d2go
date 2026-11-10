@@ -100,3 +100,39 @@ export function serialFromScan(text: string) {
   const match = s.match(/\/spools\/([^/?#\s]+)/);
   return decodeURIComponent(match ? match[1] : s).toUpperCase();
 }
+
+// Spool serials: "SP" + 4 random digits + 1 Luhn check digit, e.g. "SP48217". The check digit catches any single
+// wrong digit and almost any swap of two neighbours when a serial is typed in by hand.
+
+/** Luhn check digit for a string of digits. */
+export function luhnDigit(digits: string) {
+  let sum = 0;
+  let double = true;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = Number(digits[i]) * (double ? 2 : 1);
+    if (d > 9) d -= 9;
+    sum += d;
+    double = !double;
+  }
+  return String((10 - (sum % 10)) % 10);
+}
+
+/** A new random spool serial. `random` fills bytes (crypto.getRandomValues by default). */
+export function randomSpoolSerial(random: (bytes: Uint8Array) => Uint8Array = (b) => crypto.getRandomValues(b)) {
+  // 65536 is not a multiple of 10000, so reject the top slice to keep every number equally likely.
+  let n: number;
+  do {
+    const [hi, lo] = random(new Uint8Array(2));
+    n = hi * 256 + lo;
+  } while (n >= 60000);
+  const body = String(n % 10000).padStart(4, "0");
+  return `SP${body}${luhnDigit(body)}`;
+}
+
+/** Looks like a spool serial in the current format (right shape, whatever the check digit). */
+export const SPOOL_SERIAL_RE = /^SP\d{5}$/;
+
+/** Whether a spool serial has the right shape and check digit. */
+export function isValidSpoolSerial(serial: string) {
+  return SPOOL_SERIAL_RE.test(serial) && luhnDigit(serial.slice(2, 6)) === serial[6];
+}

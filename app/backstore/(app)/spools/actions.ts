@@ -7,7 +7,7 @@ import { requireAdmin } from "@/lib/auth";
 import { nextSpoolSerial } from "@/lib/codes";
 import { prisma } from "@/lib/db";
 import { findShelfLabel, ON_SHELF } from "@/lib/label-lookup";
-import { checkOpening, checkWeighIn, checkWeighOut, EMPTY_AT_G, filamentCost, loanCharge, remainingG, serialFromScan } from "@/lib/spool";
+import { checkOpening, checkWeighIn, checkWeighOut, EMPTY_AT_G, filamentCost, isValidSpoolSerial, loanCharge, remainingG, serialFromScan, SPOOL_SERIAL_RE } from "@/lib/spool";
 import { getLendRate } from "@/lib/spools";
 
 const optionalText = z
@@ -121,7 +121,9 @@ export async function resolveScan(text: string) {
     const serial = serialFromScan(value);
     const spool = await prisma.spool.findUnique({ where: { serial }, select: { serial: true } });
     if (spool) return { kind: "spool" as const, serial: spool.serial };
-    if (/^SP-/i.test(serial)) throw new UserError(`No spool ${serial}`);
+    if (SPOOL_SERIAL_RE.test(serial) && !isValidSpoolSerial(serial))
+      throw new UserError(`${serial} isn't a valid spool serial — misread? Scan again`);
+    if (/^SP-/.test(serial) || SPOOL_SERIAL_RE.test(serial)) throw new UserError(`No spool ${serial}`);
     const label = await findShelfLabel(value);
     return { kind: "label" as const, ...label };
   });

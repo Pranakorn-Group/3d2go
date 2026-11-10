@@ -6,9 +6,12 @@ import {
   defaultDensity,
   filamentCost,
   gramsToMetres,
+  isValidSpoolSerial,
   lendRatePerKg,
   loanCharge,
   remainingG,
+  luhnDigit,
+  randomSpoolSerial,
   remainingPct,
   serialFromScan,
 } from "./spool";
@@ -119,7 +122,32 @@ describe("loanCharge", () => {
 
 describe("serialFromScan", () => {
   it("reads a bare serial or a spool link", () => {
-    expect(serialFromScan(" sp-261031-001 ")).toBe("SP-261031-001");
-    expect(serialFromScan("https://3d2go.example/backstore/spools/SP-261031-001?x=1")).toBe("SP-261031-001");
+    expect(serialFromScan(" sp48217 ")).toBe("SP48217");
+    expect(serialFromScan("https://3d2go.example/backstore/spools/SP48217?x=1")).toBe("SP48217");
+    expect(serialFromScan("SP-261031-001")).toBe("SP-261031-001");
+  });
+});
+
+describe("spool serials", () => {
+  it("uses the Luhn check digit", () => {
+    expect(luhnDigit("7992739871")).toBe("3");
+    expect(luhnDigit("0000")).toBe("0");
+  });
+
+  it("makes SP + 4 digits + a valid check digit", () => {
+    for (let i = 0; i < 200; i++) {
+      const s = randomSpoolSerial();
+      expect(s).toMatch(/^SP\d{5}$/);
+      expect(isValidSpoolSerial(s)).toBe(true);
+    }
+    expect(randomSpoolSerial(() => new Uint8Array([0, 42]))).toBe(`SP0042${luhnDigit("0042")}`);
+  });
+
+  it("catches a wrong digit or a swap of neighbours", () => {
+    const s = `SP4821${luhnDigit("4821")}`;
+    expect(isValidSpoolSerial(s)).toBe(true);
+    expect(isValidSpoolSerial(s.replace("4821", "4831"))).toBe(false);
+    expect(isValidSpoolSerial(s.replace("4821", "4281"))).toBe(false);
+    expect(isValidSpoolSerial("SP-261031-001")).toBe(false);
   });
 });

@@ -4,7 +4,7 @@ import { SpoolLabelsView, type SpoolLabelRow } from "./spool-labels-view";
 
 export const metadata: Metadata = { title: "Spool labels" };
 
-/** A4 sheets of QR labels for spools in use. ?s=SP-…,SP-… picks which ones start ticked (else all of them). */
+/** A4 sheets of QR labels for spools in use. ?s=SP…,SP… picks which ones start ticked (else all of them). */
 export default async function SpoolLabelsPage({ searchParams }: { searchParams: Promise<{ s?: string | string[] }> }) {
   const s = (await searchParams).s;
   const picked = [s ?? []].flat().flatMap((v) => v.split(",")).map((v) => v.trim().toUpperCase()).filter(Boolean);

@@ -55,7 +55,7 @@ export function ScanView({ products, specs }: { products: ProductDTO[]; specs: R
           autoFocus
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Spool or box serial, e.g. SP-261031-001"
+          placeholder="Spool or box serial, e.g. SP48217"
           aria-label="Spool or box label serial"
           className="font-mono"
         />
