@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { ArchiveRestore, CircleCheck, CircleOff, HandCoins, QrCode, Scale, Undo2, X } from "lucide-react";
+import { ArchiveRestore, CircleCheck, CircleOff, HandCoins, QrCode, RefreshCw, Scale, Undo2, X } from "lucide-react";
 import { PayNowDialog, type PayNowConfig, type PayNowRequest } from "@/components/backstore/paynow-dialog";
 import {
   AlertDialog,
@@ -22,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { formatDateTime, formatSGD } from "@/lib/money";
 import { checkWeighIn, checkWeighOut, loanCharge, remainingG } from "@/lib/spool";
 import type { SpoolDTO, SpoolLoanDTO } from "@/lib/types";
-import { cancelLoan, lendSpool, returnSpool, setLoanPaid, setSpoolEmpty } from "../actions";
+import { cancelLoan, lendSpool, renewSpoolSerial, returnSpool, setLoanPaid, setSpoolEmpty } from "../actions";
 
 type Bill = { loanId: string; customerName: string; chargeSgd: number; reference: string };
 
@@ -318,16 +319,56 @@ export function SpoolActions({ spool }: { spool: SpoolDTO }) {
   }
 
   return (
-    <Button variant="outline" onClick={toggle} disabled={pending}>
-      {empty ? (
-        <>
-          <ArchiveRestore /> Back in use
-        </>
-      ) : (
-        <>
-          <CircleOff /> Mark empty
-        </>
-      )}
-    </Button>
+    <>
+      <RenewSerialButton spool={spool} />
+      <Button variant="outline" onClick={toggle} disabled={pending}>
+        {empty ? (
+          <>
+            <ArchiveRestore /> Back in use
+          </>
+        ) : (
+          <>
+            <CircleOff /> Mark empty
+          </>
+        )}
+      </Button>
+    </>
+  );
+}
+
+function RenewSerialButton({ spool }: { spool: SpoolDTO }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  function renew() {
+    startTransition(async () => {
+      const res = await renewSpoolSerial(spool.id);
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(`${spool.serial} is now ${res.data} — print a new label`);
+      router.replace(`/backstore/spools/${res.data}`);
+    });
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" disabled={pending}>
+          <RefreshCw /> New serial
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Give {spool.serial} a new serial?</AlertDialogTitle>
+          <AlertDialogDescription>
+            It gets a new random serial. The QR label on the reel stops working, so print a new one and stick it over the old. Loans and
+            history stay with the spool.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={renew}>New serial</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

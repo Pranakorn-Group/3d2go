@@ -243,3 +243,37 @@ export async function setSpoolEmpty(id: string, empty: boolean) {
     revalidatePath("/backstore/spools", "layout");
   });
 }
+
+/** Gives a spool a fresh random serial (SP + 4 digits + check digit). Its old QR label stops working. */
+export async function renewSpoolSerial(id: string) {
+  return run(async () => {
+    await requireAdmin();
+    const serial = await prisma.$transaction(async (tx) => {
+      const serial = await nextSpoolSerial(tx);
+      await tx.spool.update({ where: { id }, data: { serial } });
+      return serial;
+    });
+    revalidatePath("/backstore", "layout");
+    return serial;
+  });
+}
+
+/** Gives every spool still on an old-format serial (SP-261031-001) a new one. Returns the new serials. */
+export async function renewOldSpoolSerials() {
+  return run(async () => {
+    await requireAdmin();
+    const serials = await prisma.$transaction(async (tx) => {
+      const spools = await tx.spool.findMany({ select: { id: true, serial: true }, orderBy: { openedAt: "asc" } });
+      const out: string[] = [];
+      for (const s of spools) {
+        if (SPOOL_SERIAL_RE.test(s.serial)) continue;
+        const serial = await nextSpoolSerial(tx);
+        await tx.spool.update({ where: { id: s.id }, data: { serial } });
+        out.push(serial);
+      }
+      return out;
+    });
+    revalidatePath("/backstore", "layout");
+    return serials;
+  });
+}

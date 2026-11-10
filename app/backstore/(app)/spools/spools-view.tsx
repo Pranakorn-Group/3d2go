@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { Coins, Cylinder, Flame, HandCoins, Plus, Printer, Ruler, ScanLine, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
+import { Coins, Cylinder, Flame, HandCoins, Plus, Printer, RefreshCw, Ruler, ScanLine, Search } from "lucide-react";
 import { ColorSwatch } from "@/components/backstore/color-swatch";
 import { EmptyState } from "@/components/backstore/empty-state";
 import { OpenSpoolDialog } from "@/components/backstore/open-spool-dialog";
@@ -10,6 +12,17 @@ import type { PayNowConfig } from "@/components/backstore/paynow-dialog";
 import { PageHeader } from "@/components/backstore/page-header";
 import { SpoolMeter } from "@/components/backstore/spool-meter";
 import { StatCard } from "@/components/backstore/stat-card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,8 +30,10 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatDate, formatDateTime, formatSGD } from "@/lib/money";
+import { SPOOL_SERIAL_RE } from "@/lib/spool";
 import type { ProductDTO, SpoolDTO, SpoolLoanDTO, SpoolSpecDTO } from "@/lib/types";
 import { LoanPayment } from "./[serial]/weigh-panel";
+import { renewOldSpoolSerials } from "./actions";
 
 type View = "OPEN" | "EMPTY";
 
@@ -55,10 +70,12 @@ export function SpoolsView({
   const open = spools.filter((s) => s.status === "OPEN");
   const lentOut = open.filter((s) => s.lent).length;
   const unpaidSgd = unpaid.reduce((sum, l) => sum + (l.chargeSgd ?? 0), 0);
+  const oldSerials = spools.filter((s) => !SPOOL_SERIAL_RE.test(s.serial)).length;
 
   return (
     <>
       <PageHeader title="filament2go" description="Spools lent to customers, paid by the gram. Weigh when a spool goes out and when it comes back.">
+        {oldSerials > 0 && <RenewOldSerials count={oldSerials} />}
         <Button asChild variant="outline">
           <Link href="/backstore/spools/specs">
             <Ruler /> Reel weights
@@ -188,5 +205,43 @@ export function SpoolsView({
 
       <OpenSpoolDialog products={products} specs={specs} open={opening} onOpenChange={setOpening} />
     </>
+  );
+}
+
+/** Moves spools still on old serials (SP-261031-001) to the new format, then opens their labels to reprint. */
+function RenewOldSerials({ count }: { count: number }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  function renew() {
+    startTransition(async () => {
+      const res = await renewOldSpoolSerials();
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(`${res.data.length} spool${res.data.length === 1 ? "" : "s"} renumbered — print their new labels`);
+      if (res.data.length) router.push(`/backstore/spools/labels?s=${res.data.join(",")}`);
+    });
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" disabled={pending}>
+          <RefreshCw /> Renew {count} old serial{count === 1 ? "" : "s"}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Renew {count} old serial{count === 1 ? "" : "s"}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Every spool still on an old serial (SP-261031-001) gets a new random one like SP48217. Their QR labels stop working, so the label
+            sheet opens next with just those spools ticked. Loans and history stay with each spool.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={renew}>Renew</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
