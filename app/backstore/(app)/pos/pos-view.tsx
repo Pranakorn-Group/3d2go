@@ -95,9 +95,11 @@ export function PosView({
   const [channel, setChannel] = useState<SaleChannel>("STORE");
   const [orderNo, setOrderNo] = useState("");
   const [fee, setFee] = useState("");
+  const [received, setReceived] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [qr, setQr] = useState<PayNowRequest | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
+  const [orderScanOpen, setOrderScanOpen] = useState(false);
   const [scanning, startScanning] = useTransition();
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [pending, startTransition] = useTransition();
@@ -216,6 +218,14 @@ export function PosView({
     // The channel stays: a run of Shopee orders is entered one after another.
     setOrderNo("");
     setFee("");
+    setReceived("");
+  }
+
+  /** The seller usually knows the payout credited, not the fee — back out the fee from it. */
+  function setReceivedAmount(v: string) {
+    setReceived(v);
+    const n = Number(v);
+    if (v.trim() !== "" && Number.isFinite(n)) setFee(String(round2(Math.max(0, total - n))));
   }
 
   function checkout() {
@@ -278,12 +288,53 @@ export function PosView({
           </SelectContent>
         </Select>
         {online && (
-          <div className="grid grid-cols-[1fr_8rem] gap-2">
-            <Input aria-label="Order number" placeholder={`${channelLabel(channel)} order no.`} value={orderNo} onChange={(e) => setOrderNo(e.target.value)} />
-            <InputGroup>
-              <InputGroupAddon>Fee</InputGroupAddon>
-              <InputGroupInput aria-label="Platform fee (SGD)" type="number" inputMode="decimal" min="0" step="0.01" placeholder="0" value={fee} onChange={(e) => setFee(e.target.value)} className="text-right tabular-nums" />
-            </InputGroup>
+          <div className="grid gap-2">
+            <div className="flex gap-2">
+              <Input aria-label="Order number" placeholder={`${channelLabel(channel)} order no.`} value={orderNo} onChange={(e) => setOrderNo(e.target.value)} />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setOrderScanOpen(true)}
+                title={`Scan the ${channelLabel(channel)} order barcode / QR code`}
+              >
+                <ScanLine />
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <InputGroup>
+                <InputGroupAddon>Received</InputGroupAddon>
+                <InputGroupInput
+                  aria-label="Order amount received (SGD)"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  value={received}
+                  onChange={(e) => setReceivedAmount(e.target.value)}
+                  className="text-right tabular-nums"
+                />
+              </InputGroup>
+              <InputGroup>
+                <InputGroupAddon>Fee</InputGroupAddon>
+                <InputGroupInput
+                  aria-label="Platform fee (SGD)"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  value={fee}
+                  onChange={(e) => {
+                    setReceived("");
+                    setFee(e.target.value);
+                  }}
+                  className="text-right tabular-nums"
+                />
+              </InputGroup>
+            </div>
           </div>
         )}
       </div>
@@ -654,6 +705,24 @@ export function PosView({
             </span>
             <span className="tabular-nums">{formatSGD(total)}</span>
           </Button>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={orderScanOpen} onOpenChange={setOrderScanOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Scan order number</DialogTitle>
+            <DialogDescription>Point the camera at the order barcode or QR code on the {channelLabel(channel)} shipping label.</DialogDescription>
+          </DialogHeader>
+          {orderScanOpen && (
+            <QrScanner
+              formats={["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e", "itf"]}
+              onScan={(text) => {
+                setOrderNo(text.trim());
+                setOrderScanOpen(false);
+                toast.success(`Order number: ${text.trim()}`);
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
       {paynow && <PayNowDialog config={paynow} request={qr} onOpenChange={(o) => !o && setQr(null)} />}

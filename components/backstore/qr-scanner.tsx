@@ -10,8 +10,12 @@ declare global {
   var BarcodeDetector: (new (opts: { formats: string[] }) => Detector) | undefined;
 }
 
-/** Live camera view that calls `onScan` with each QR code it reads (same code at most once every 2 s). */
-export function QrScanner({ onScan, paused = false }: { onScan: (text: string) => void; paused?: boolean }) {
+/**
+ * Live camera view that calls `onScan` with each code it reads (same code at most once every 2 s).
+ * `formats` are passed to the native BarcodeDetector (Chrome/Android) so 1D shipping barcodes can be
+ * read too; the jsQR fallback used on Safari only ever decodes QR codes.
+ */
+export function QrScanner({ onScan, paused = false, formats = ["qr_code"] }: { onScan: (text: string) => void; paused?: boolean; formats?: string[] }) {
   const video = useRef<HTMLVideoElement>(null);
   const onScanRef = useRef(onScan);
   const pausedRef = useRef(paused);
@@ -29,7 +33,7 @@ export function QrScanner({ onScan, paused = false }: { onScan: (text: string) =
     let last = { text: "", at: 0 };
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const native = globalThis.BarcodeDetector ? new globalThis.BarcodeDetector({ formats: ["qr_code"] }) : null;
+    const native = globalThis.BarcodeDetector ? new globalThis.BarcodeDetector({ formats }) : null;
 
     async function read(v: HTMLVideoElement) {
       if (native) return (await native.detect(v))[0]?.rawValue;
