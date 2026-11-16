@@ -39,3 +39,15 @@ export function summarizeStock(items: (Priced & Pick<ProductDTO, "stockQty">)[])
 export function formatPct(pct: number | null) {
   return pct === null ? "—" : `${pct.toFixed(0)}%`;
 }
+
+/** Period-over-period change as a signed percentage; null when there's nothing to compare against. */
+export function periodDelta(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+export function formatDelta(pct: number | null) {
+  if (pct === null) return null;
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${pct.toFixed(0)}% vs prior period`;
+}
