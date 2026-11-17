@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { CHANNELS, channelLabel, isOnline, saleProfit } from "@/lib/channels";
 import { formatDate, formatDateTime, formatSGD } from "@/lib/money";
 import type { SaleChannel, SaleDTO } from "@/lib/types";
-import { cancelSale, completeReservation, updateSaleChannel } from "./actions";
+import { cancelSale, completeReservation, updateSaleAdjustment, updateSaleChannel } from "./actions";
 
 const profit = saleProfit;
 
@@ -48,11 +48,13 @@ export function ChannelBadge({ channel }: { channel: SaleChannel }) {
   );
 }
 
-/** Where the sale was made: switch it to a marketplace (order no. + fees) or back to in store. */
+/** Where the sale was made (order no. + fee), plus any other income/expense that counts toward profit. */
 function ChannelEditor({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
   const [channel, setChannel] = useState<SaleChannel>(sale.channel === "STORE" ? "SHOPEE" : sale.channel);
   const [orderNo, setOrderNo] = useState(sale.platformOrderNo ?? "");
   const [fee, setFee] = useState(sale.platformFee ? String(sale.platformFee) : "");
+  const [otherAmount, setOtherAmount] = useState(sale.otherAmount ? String(sale.otherAmount) : "");
+  const [otherNote, setOtherNote] = useState(sale.otherNote ?? "");
   const [pending, startTransition] = useTransition();
   const online = isOnline(channel);
 
@@ -60,6 +62,8 @@ function ChannelEditor({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) 
     startTransition(async () => {
       const res = await updateSaleChannel(sale.id, { channel, platformOrderNo: orderNo, platformFee: fee || 0 });
       if (!res.ok) return void toast.error(res.error);
+      const res2 = await updateSaleAdjustment(sale.id, { otherAmount: otherAmount || 0, otherNote });
+      if (!res2.ok) return void toast.error(res2.error);
       toast.success(online ? `${sale.code} marked as sold on ${channelLabel(channel)}` : `${sale.code} set to in store`);
       onDone();
     });
@@ -87,6 +91,22 @@ function ChannelEditor({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) 
           </InputGroup>
         </div>
       )}
+      <div className="grid grid-cols-[6.5rem_1fr] gap-2">
+        <InputGroup>
+          <InputGroupAddon>+/−</InputGroupAddon>
+          <InputGroupInput
+            aria-label="Other income or expense (SGD)"
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            placeholder="0"
+            value={otherAmount}
+            onChange={(e) => setOtherAmount(e.target.value)}
+            className="text-right tabular-nums"
+          />
+        </InputGroup>
+        <Input placeholder="Note (ads, shipping, bonus…)" value={otherNote} onChange={(e) => setOtherNote(e.target.value)} />
+      </div>
       <Button size="sm" disabled={pending} onClick={save}>
         {pending ? "Saving…" : "Save"}
       </Button>
@@ -171,6 +191,15 @@ function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
             <dd className="text-right tabular-nums">{formatSGD(sale.total - sale.platformFee)}</dd>
           </>
         )}
+        {sale.otherAmount !== 0 && (
+          <>
+            <dt className="text-muted-foreground">{sale.otherNote || (sale.otherAmount > 0 ? "Other income" : "Other expense")}</dt>
+            <dd className={`text-right tabular-nums ${sale.otherAmount < 0 ? "text-destructive" : ""}`}>
+              {sale.otherAmount > 0 ? "+" : ""}
+              {formatSGD(sale.otherAmount)}
+            </dd>
+          </>
+        )}
         {p !== null && sale.status === "COMPLETED" && (
           <>
             <dt className="text-muted-foreground">Profit</dt>
@@ -186,7 +215,7 @@ function SaleDetail({ sale, onDone }: { sale: SaleDTO; onDone: () => void }) {
           <ChannelEditor sale={sale} onDone={() => setEditing(false)} />
         ) : (
           <Button variant="outline" size="sm" className="justify-self-start" onClick={() => setEditing(true)}>
-            <Store /> {isOnline(sale.channel) ? "Edit online order" : "Mark as sold online"}
+            <Store /> {isOnline(sale.channel) ? "Edit order / adjustments" : "Mark as sold online / adjust"}
           </Button>
         ))}
 

@@ -67,6 +67,9 @@ export type SaleDTO = {
   platformOrderNo: string | null;
   /** Marketplace fees (SGD), taken off profit. */
   platformFee: number;
+  /** Other profit adjustment (SGD): positive = extra income, negative = extra expense (ads, shipping…). */
+  otherAmount: number;
+  otherNote: string | null;
   customerName: string | null;
   phone: string | null;
   deposit: number | null;

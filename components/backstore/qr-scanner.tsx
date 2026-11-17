@@ -38,12 +38,19 @@ export function QrScanner({ onScan, paused = false, formats = ["qr_code"] }: { o
     async function read(v: HTMLVideoElement) {
       if (native) return (await native.detect(v))[0]?.rawValue;
       if (!ctx) return;
-      // Decoding a downscaled frame is plenty for a label held near the camera, and much faster.
-      const scale = Math.min(1, 640 / v.videoWidth);
-      canvas.width = v.videoWidth * scale;
-      canvas.height = v.videoHeight * scale;
-      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      // Decode only the square scan target (matches the on-screen guide, same crop object-cover
+      // gives the video): far fewer pixels than the full frame, so it's both faster and more
+      // accurate for a small code — no time spent decoding background that can't hold the code.
+      const side = Math.min(v.videoWidth, v.videoHeight);
+      const inset = side * 0.18;
+      const crop = side - inset * 2;
+      const sx = (v.videoWidth - side) / 2 + inset;
+      const sy = (v.videoHeight - side) / 2 + inset;
+      const size = Math.min(crop, 480);
+      canvas.width = size;
+      canvas.height = size;
+      ctx.drawImage(v, sx, sy, crop, crop, 0, 0, size, size);
+      const img = ctx.getImageData(0, 0, size, size);
       return jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" })?.data;
     }
 
@@ -62,12 +69,17 @@ export function QrScanner({ onScan, paused = false, formats = ["qr_code"] }: { o
           // A frame that can't be read is just skipped.
         }
       }
-      frame = window.setTimeout(() => requestAnimationFrame(tick), 150);
+      // The native detector is hardware-accelerated and cheap, so it scans every animation frame;
+      // jsQR decodes on the CPU, so it keeps a small gap to leave the main thread room to breathe.
+      frame = window.setTimeout(() => requestAnimationFrame(tick), native ? 0 : 90);
     }
 
-    // navigator.mediaDevices only exists on HTTPS (and localhost).
+    // navigator.mediaDevices only exists on HTTPS (and localhost). A lower capture resolution means
+    // less work per frame getting the feed to the canvas, with no loss for a label held up close.
     const media = navigator.mediaDevices;
-    (media ? media.getUserMedia({ video: { facingMode: "environment" }, audio: false }) : Promise.reject(null))
+    (media
+      ? media.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+      : Promise.reject(null))
       .then((s) => {
         if (stopped) return s.getTracks().forEach((t) => t.stop());
         stream = s;

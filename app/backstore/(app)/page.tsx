@@ -61,11 +61,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.product.findMany({ where: { active: true } }),
     prisma.sale.findMany({
       where: { status: "COMPLETED", completedAt: { gte: range.from, lt: range.toExclusive } },
-      select: { total: true, costTotal: true, platformFee: true, completedAt: true, channel: true },
+      select: { total: true, costTotal: true, platformFee: true, otherAmount: true, completedAt: true, channel: true },
     }),
     prisma.sale.aggregate({
       where: { status: "COMPLETED", completedAt: { gte: prevRange.from, lt: prevRange.toExclusive } },
-      _sum: { total: true, costTotal: true, platformFee: true },
+      _sum: { total: true, costTotal: true, platformFee: true, otherAmount: true },
     }),
     prisma.purchaseOrder.findMany({
       where: { status: { in: ["PLACED", "SHIPPED"] } },
@@ -97,9 +97,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const rangeRevenue = rangeSales.reduce((s, x) => s + Number(x.total), 0);
   const rangeCost = rangeSales.reduce((s, x) => s + Number(x.costTotal ?? 0), 0);
   const rangeFees = rangeSales.reduce((s, x) => s + Number(x.platformFee), 0);
-  const rangeProfit = rangeRevenue - rangeCost - rangeFees;
+  const rangeOther = rangeSales.reduce((s, x) => s + Number(x.otherAmount), 0);
+  const rangeProfit = rangeRevenue - rangeCost - rangeFees + rangeOther;
   const prevRevenue = Number(prevSales._sum.total ?? 0);
-  const prevProfit = prevRevenue - Number(prevSales._sum.costTotal ?? 0) - Number(prevSales._sum.platformFee ?? 0);
+  const prevProfit =
+    prevRevenue - Number(prevSales._sum.costTotal ?? 0) - Number(prevSales._sum.platformFee ?? 0) + Number(prevSales._sum.otherAmount ?? 0);
   const revenueDelta = formatDelta(periodDelta(rangeRevenue, prevRevenue));
   const profitDelta = formatDelta(periodDelta(rangeProfit, prevProfit));
 
@@ -112,7 +114,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     const b = buckets.get(key);
     if (!b) continue;
     b.revenue += Number(s.total);
-    b.profit += Number(s.total) - Number(s.costTotal ?? 0) - Number(s.platformFee);
+    b.profit += Number(s.total) - Number(s.costTotal ?? 0) - Number(s.platformFee) + Number(s.otherAmount);
   }
   const trendDays = [...buckets.entries()].map(([key, v]) => ({
     label: new Date(key).toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
@@ -404,7 +406,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             ) : (
               <ul className="divide-y">
                 {recentSales.map((s) => {
-                  const profit = Number(s.total) - Number(s.costTotal ?? 0) - Number(s.platformFee);
+                  const profit = Number(s.total) - Number(s.costTotal ?? 0) - Number(s.platformFee) + Number(s.otherAmount);
                   return (
                     <li key={s.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
                       <div className="min-w-0">

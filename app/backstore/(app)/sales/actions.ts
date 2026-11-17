@@ -29,6 +29,9 @@ const saleSchema = z
     channel: channelEnum.default("STORE"),
     platformOrderNo: z.string().trim().optional(),
     platformFee: z.coerce.number().min(0, "Fee can't be negative").default(0),
+    /** Other profit adjustment: positive = extra income (e.g. a bigger-than-billed payout), negative = extra expense (ads, shipping…). */
+    otherAmount: z.coerce.number().default(0),
+    otherNote: z.string().trim().optional(),
     customerName: z.string().trim().optional(),
     phone: z.string().trim().optional(),
     deposit: z.coerce.number().min(0).nullable().optional(),
@@ -110,6 +113,8 @@ export async function createSale(input: SaleInput) {
           channel: s.channel,
           platformOrderNo: s.channel === "STORE" ? null : s.platformOrderNo || null,
           platformFee: s.channel === "STORE" ? 0 : s.platformFee,
+          otherAmount: s.otherAmount,
+          otherNote: s.otherNote || null,
           customerName: s.customerName || null,
           phone: s.phone || null,
           deposit: sell ? null : (s.deposit ?? null),
@@ -245,6 +250,25 @@ export async function cancelSale(id: string) {
       await tx.sale.update({ where: { id }, data: { status: "CANCELLED" } });
     });
 
+    revalidatePath("/backstore", "layout");
+  });
+}
+
+const adjustmentSchema = z.object({
+  otherAmount: z.coerce.number().default(0),
+  otherNote: z.string().trim().optional(),
+});
+
+export type SaleAdjustmentInput = z.input<typeof adjustmentSchema>;
+
+/** Set a sale's other profit adjustment after the fact — e.g. a marketplace payout bigger than the bill, or an ad/shipping cost. */
+export async function updateSaleAdjustment(id: string, input: SaleAdjustmentInput) {
+  return run(async () => {
+    await requireAdmin();
+    const a = adjustmentSchema.parse(input);
+    const sale = await prisma.sale.findUniqueOrThrow({ where: { id } });
+    if (sale.status === "CANCELLED") throw new UserError("Cancelled sales can't be changed");
+    await prisma.sale.update({ where: { id }, data: { otherAmount: a.otherAmount, otherNote: a.otherNote || null } });
     revalidatePath("/backstore", "layout");
   });
 }

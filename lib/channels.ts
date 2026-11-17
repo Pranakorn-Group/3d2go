@@ -13,6 +13,6 @@ export const CHANNELS: { value: SaleChannel; label: string }[] = [
 export const channelLabel = (c: SaleChannel) => CHANNELS.find((x) => x.value === c)?.label ?? c;
 export const isOnline = (c: SaleChannel) => c !== "STORE";
 
-/** What the sale earned after item cost and marketplace fees; null until it has a cost. */
-export const saleProfit = (s: { total: number; costTotal: number | null; platformFee: number }) =>
-  s.costTotal === null ? null : s.total - s.costTotal - s.platformFee;
+/** What the sale earned after item cost, marketplace fees, and any other adjustment; null until it has a cost. */
+export const saleProfit = (s: { total: number; costTotal: number | null; platformFee: number; otherAmount: number }) =>
+  s.costTotal === null ? null : s.total - s.costTotal - s.platformFee + s.otherAmount;

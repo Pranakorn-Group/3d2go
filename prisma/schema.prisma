@@ -152,6 +152,10 @@ model Sale {
   platformOrderNo String?
   /// Marketplace commission + fees taken from the payout (SGD); counts against profit.
   platformFee     Decimal     @default(0) @db.Decimal(12, 2)
+  /// Other adjustment to profit (SGD): positive = extra income (e.g. a payout bigger than the bill),
+  /// negative = extra expense (ads, shipping…) that isn't an item cost or the platform fee above.
+  otherAmount     Decimal     @default(0) @db.Decimal(12, 2)
+  otherNote       String?
   customerName    String?
   phone           String?
   deposit         Decimal?    @db.Decimal(12, 2)

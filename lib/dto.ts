@@ -77,6 +77,8 @@ export function toSale(s: Prisma.SaleGetPayload<{ include: typeof saleInclude }>
     channel: s.channel,
     platformOrderNo: s.platformOrderNo,
     platformFee: Number(s.platformFee),
+    otherAmount: Number(s.otherAmount),
+    otherNote: s.otherNote,
     customerName: s.customerName,
     phone: s.phone,
     deposit: num(s.deposit),

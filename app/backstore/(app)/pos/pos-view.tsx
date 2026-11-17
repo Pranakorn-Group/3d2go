@@ -96,6 +96,8 @@ export function PosView({
   const [orderNo, setOrderNo] = useState("");
   const [fee, setFee] = useState("");
   const [received, setReceived] = useState("");
+  const [otherAmount, setOtherAmount] = useState("");
+  const [otherNote, setOtherNote] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [qr, setQr] = useState<PayNowRequest | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
@@ -219,13 +221,29 @@ export function PosView({
     setOrderNo("");
     setFee("");
     setReceived("");
+    setOtherAmount("");
+    setOtherNote("");
   }
 
-  /** The seller usually knows the payout credited, not the fee — back out the fee from it. */
+  /**
+   * The seller usually knows the payout credited, not the fee — back out the fee from it. A payout
+   * bigger than the bill (platform rounding, a bonus) isn't a negative fee: it's extra income, so it
+   * goes in `otherAmount` and counts toward profit instead of silently being dropped.
+   */
   function setReceivedAmount(v: string) {
     setReceived(v);
     const n = Number(v);
-    if (v.trim() !== "" && Number.isFinite(n)) setFee(String(round2(Math.max(0, total - n))));
+    if (v.trim() === "" || !Number.isFinite(n)) return;
+    const diff = round2(total - n);
+    if (diff >= 0) {
+      setFee(String(diff));
+      setOtherAmount("");
+      setOtherNote("");
+    } else {
+      setFee("0");
+      setOtherAmount(String(-diff));
+      setOtherNote((note) => note || `${channelLabel(channel)} paid more than the bill`);
+    }
   }
 
   function checkout() {
@@ -242,6 +260,8 @@ export function PosView({
         channel,
         platformOrderNo: online ? orderNo : undefined,
         platformFee: online ? fee || 0 : 0,
+        otherAmount: otherAmount || 0,
+        otherNote: otherNote || undefined,
       });
       if (!res.ok) return void toast.error(res.error);
       const where = online ? ` on ${channelLabel(channel)}` : "";
@@ -337,6 +357,27 @@ export function PosView({
             </div>
           </div>
         )}
+        <div className="grid grid-cols-[6.5rem_1fr] gap-2">
+          <InputGroup>
+            <InputGroupAddon>+/−</InputGroupAddon>
+            <InputGroupInput
+              aria-label="Other income or expense (SGD)"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              placeholder="0"
+              value={otherAmount}
+              onChange={(e) => setOtherAmount(e.target.value)}
+              className="text-right tabular-nums"
+            />
+          </InputGroup>
+          <Input
+            aria-label="Note for the other income or expense"
+            placeholder="Note (ads, shipping, bonus…)"
+            value={otherNote}
+            onChange={(e) => setOtherNote(e.target.value)}
+          />
+        </div>
       </div>
 
       {cart.length === 0 ? (
@@ -438,6 +479,15 @@ export function PosView({
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>Payout after {channelLabel(channel)} fee</span>
             <span className="tabular-nums">{formatSGD(round2(total - Number(fee)))}</span>
+          </div>
+        )}
+        {Number(otherAmount) !== 0 && (
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>{otherNote || (Number(otherAmount) > 0 ? "Other income" : "Other expense")}</span>
+            <span className={`tabular-nums ${Number(otherAmount) < 0 ? "text-destructive" : ""}`}>
+              {Number(otherAmount) > 0 ? "+" : ""}
+              {formatSGD(Number(otherAmount))}
+            </span>
           </div>
         )}
       </div>
