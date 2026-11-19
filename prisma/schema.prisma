@@ -40,6 +40,15 @@ enum SaleChannel {
   OTHER
 }
 
+enum LedgerCategory {
+  ADS
+  SHIPPING
+  RENT
+  UTILITIES
+  FEE
+  OTHER
+}
+
 enum MovementKind {
   RECEIVE
   SALE
@@ -188,6 +197,22 @@ model SaleItem {
   product Product @relation(fields: [productId], references: [id])
 
   @@index([saleId])
+}
+
+/// A general business income/expense entry that isn't tied to a single sale (rent, ads, shipping,
+/// a marketplace payout correction…). Counts toward profit for whatever date it's logged on.
+model LedgerEntry {
+  id        String          @id @default(cuid())
+  date      DateTime
+  /// Signed (SGD): positive = income, negative = expense.
+  amount    Decimal         @db.Decimal(12, 2)
+  category  LedgerCategory  @default(OTHER)
+  /// Optional: tag the entry to a sales channel (e.g. Shopee ad spend) without tying it to one sale.
+  channel   SaleChannel?
+  note      String?
+  createdAt DateTime        @default(now())
+
+  @@index([date])
 }
 
 model StockMovement {

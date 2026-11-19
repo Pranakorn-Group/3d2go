@@ -1,6 +1,6 @@
 import "server-only";
 import type { Prisma } from "@/lib/generated/prisma/client";
-import type { ProductDTO, PurchaseOrderDTO, SaleDTO, SpoolDTO, SpoolLoanDTO } from "@/lib/types";
+import type { LedgerEntryDTO, ProductDTO, PurchaseOrderDTO, SaleDTO, SpoolDTO, SpoolLoanDTO } from "@/lib/types";
 
 type Dec = Prisma.Decimal | null;
 const num = (d: Dec) => (d === null ? null : Number(d));
@@ -140,5 +140,17 @@ export function toSpool(s: Prisma.SpoolGetPayload<{ include: typeof spoolInclude
     emptiedAt: s.emptiedAt?.toISOString() ?? null,
     product: s.product,
     lent: s.loans[0] ? toSpoolLoan(s.loans[0]) : null,
+  };
+}
+
+export function toLedgerEntry(e: Prisma.LedgerEntryGetPayload<object>): LedgerEntryDTO {
+  return {
+    id: e.id,
+    date: e.date.toISOString(),
+    amount: Number(e.amount),
+    category: e.category,
+    channel: e.channel,
+    note: e.note,
+    createdAt: e.createdAt.toISOString(),
   };
 }

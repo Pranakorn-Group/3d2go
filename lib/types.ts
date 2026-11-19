@@ -86,6 +86,20 @@ export type SaleDTO = {
 
 export const available = (p: Pick<ProductDTO, "stockQty" | "reservedQty">) => p.stockQty - p.reservedQty;
 
+export type LedgerCategory = "ADS" | "SHIPPING" | "RENT" | "UTILITIES" | "FEE" | "OTHER";
+
+/** A general business income/expense entry, not tied to a sale (rent, ads, shipping…). */
+export type LedgerEntryDTO = {
+  id: string;
+  date: string;
+  /** Signed (SGD): positive = income, negative = expense. */
+  amount: number;
+  category: LedgerCategory;
+  channel: SaleChannel | null;
+  note: string | null;
+  createdAt: string;
+};
+
 export type SpoolStatus = "OPEN" | "EMPTY";
 
 export type SpoolLoanDTO = {
