@@ -7,6 +7,7 @@ import {
   Archive,
   ArchiveRestore,
   ChevronRight,
+  Copy,
   ExternalLink,
   History,
   ListPlus,
@@ -85,6 +86,27 @@ function priceRange(items: ProductDTO[]) {
   const lo = Math.min(...prices);
   const hi = Math.max(...prices);
   return lo === hi ? formatSGD(lo) : `${formatSGD(lo)} – ${formatSGD(hi)}`;
+}
+
+/** Colors with rolls actually available to sell right now (on hand, not held). */
+function availableColors(items: ProductDTO[]) {
+  return items.filter((p) => p.active && available(p) > 0).map((p) => p.color);
+}
+
+/** "{Brand} {Type}: Black, White, Bamboo Green…" — for pasting into a listing or chat. Empty when nothing's in stock. */
+function groupCopyText(g: Pick<Group, "brand" | "type" | "items">) {
+  const colors = availableColors(g.items);
+  return colors.length ? `${g.brand} ${g.type}: ${colors.join(", ")}` : "";
+}
+
+async function copyToClipboard(text: string, emptyMessage: string) {
+  if (!text) return void toast.error(emptyMessage);
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard");
+  } catch {
+    toast.error("Couldn't copy — your browser blocked clipboard access");
+  }
 }
 
 type Group = {
@@ -213,6 +235,17 @@ export function StockView({
         title="Stock"
         description={`${rows.length} SKUs · ${rolls(totals.rolls)}${totals.incoming ? ` (+${totals.incoming} shipping)` : ""} · ${formatSGD(totals.value)} at cost`}
       >
+        <Button
+          variant="outline"
+          onClick={() =>
+            copyToClipboard(
+              groups.map(groupCopyText).filter(Boolean).join("\n"),
+              "No colors in stock to copy",
+            )
+          }
+        >
+          <Copy /> Copy colors
+        </Button>
         <Button asChild variant="outline">
           <Link href="/backstore/stock/catalog">
             <Tags /> Brands & types
@@ -357,6 +390,13 @@ export function StockView({
                         </span>
                       </div>
                     </button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyToClipboard(groupCopyText(g), "No colors in stock to copy")}
+                    >
+                      <Copy /> <span className="hidden sm:inline">Copy</span>
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => setBulkEditing(g)}>
                       <PencilLine /> <span className="hidden sm:inline">Edit all</span>
                     </Button>

@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ReceiptText } from "lucide-react";
+import { Coins, PiggyBank, Receipt, ReceiptText } from "lucide-react";
 import { EmptyState } from "@/components/backstore/empty-state";
 import { PageHeader } from "@/components/backstore/page-header";
+import { StatCard } from "@/components/backstore/stat-card";
 import { CHANNELS } from "@/lib/channels";
 import { prisma } from "@/lib/db";
 import { saleInclude, toSale } from "@/lib/dto";
 import type { SaleChannel, SaleStatus } from "@/lib/generated/prisma/enums";
+import { formatSGD } from "@/lib/money";
+import { formatPct } from "@/lib/profit";
 import { cn } from "@/lib/utils";
 import { SalesList } from "./sales-list";
 
@@ -27,7 +30,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const channelWhere = !channel ? {} : channel === "online" ? { channel: { not: "STORE" as SaleChannel } } : { channel };
   const href = (t: string, c?: string) => `/backstore/sales?tab=${t}${c ? `&channel=${c}` : ""}`;
   const chips = [{ value: undefined, label: "All channels" }, { value: "online", label: "Online" }, ...CHANNELS];
-  const [rows, counts] = await Promise.all([
+  // "Sales" among the current statuses have a cost/fee/profit; "Reservations" and "Cancelled" don't.
+  const completedInView = (tab.statuses as readonly string[]).includes("COMPLETED");
+  const [rows, counts, viewSum, completedSum] = await Promise.all([
     prisma.sale.findMany({
       where: { status: { in: [...tab.statuses] as SaleStatus[] }, ...channelWhere },
       include: saleInclude,
@@ -35,9 +40,28 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       take: 200,
     }),
     prisma.sale.groupBy({ by: ["status"], where: channelWhere, _count: true }),
+    prisma.sale.aggregate({ where: { status: { in: [...tab.statuses] as SaleStatus[] }, ...channelWhere }, _sum: { total: true }, _count: true }),
+    completedInView
+      ? prisma.sale.aggregate({
+          where: { status: "COMPLETED", ...channelWhere },
+          _sum: { total: true, costTotal: true, platformFee: true, otherAmount: true },
+          _count: true,
+        })
+      : Promise.resolve(null),
   ]);
   const count = (statuses: readonly string[]) =>
     counts.filter((c) => statuses.includes(c.status)).reduce((s, c) => s + c._count, 0);
+
+  const viewCount = viewSum._count;
+  const viewRevenue = Number(viewSum._sum.total ?? 0);
+  const avgOrder = viewCount > 0 ? viewRevenue / viewCount : 0;
+  const completedRevenue = Number(completedSum?._sum.total ?? 0);
+  const completedProfit = completedSum
+    ? completedRevenue -
+      Number(completedSum._sum.costTotal ?? 0) -
+      Number(completedSum._sum.platformFee ?? 0) +
+      Number(completedSum._sum.otherAmount ?? 0)
+    : null;
 
   return (
     <>
@@ -70,6 +94,24 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           </Link>
         ))}
       </div>
+      {viewCount > 0 && (
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard label={tab.label} value={viewCount} hint={`${formatSGD(viewRevenue)} total`} icon={ReceiptText} />
+          <StatCard label="Avg. order" value={formatSGD(avgOrder)} icon={Coins} />
+          {completedProfit !== null && (
+            <>
+              <StatCard label="Sold revenue" value={formatSGD(completedRevenue)} hint={`${completedSum?._count ?? 0} sales`} icon={Receipt} />
+              <StatCard
+                label="Profit"
+                value={formatSGD(completedProfit)}
+                hint={formatPct(completedRevenue > 0 ? (completedProfit / completedRevenue) * 100 : null)}
+                icon={PiggyBank}
+              />
+            </>
+          )}
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <EmptyState icon={ReceiptText} title="Nothing here yet">
           Sales and reservations made in the POS show up here.
