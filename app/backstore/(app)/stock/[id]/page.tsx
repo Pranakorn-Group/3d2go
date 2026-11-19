@@ -132,14 +132,13 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                 <TableRow>
                   <TableHead className="pl-6">Order</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Unit price</TableHead>
-                  <TableHead className="pr-6 text-right">ต้นทุนต่อม้วน</TableHead>
+                  <TableHead className="pr-6 text-right">Unit price</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {row.purchaseItems.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                    <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
                       Not purchased yet
                     </TableCell>
                   </TableRow>
@@ -153,12 +152,12 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         {formatDate(i.po.orderedAt)} <StatusBadge status={i.po.status} />
                       </div>
+                      <div className="text-xs text-muted-foreground">
+                        ต้นทุนต่อม้วน {i.unitCostSgd === null ? "—" : formatSGD(Number(i.unitCostSgd))}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{i.qty}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatMoney(Number(i.unitPrice), i.po.currency)}</TableCell>
-                    <TableCell className="pr-6 text-right font-medium tabular-nums">
-                      {i.unitCostSgd === null ? "—" : formatSGD(Number(i.unitCostSgd))}
-                    </TableCell>
+                    <TableCell className="pr-6 text-right tabular-nums">{formatMoney(Number(i.unitPrice), i.po.currency)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -1,4 +1,4 @@
-import { Cylinder, LayoutDashboard, Package, QrCode, ReceiptText, ScanLine, ShoppingCart, Tags, Truck, Users, type LucideIcon } from "lucide-react";
+import { Cylinder, LayoutDashboard, Package, QrCode, Receipt, ReceiptText, ScanLine, ShoppingCart, Tags, Truck, Users, type LucideIcon } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon };
 
@@ -27,7 +27,13 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: "/backstore/spools/scan", label: "Scan & weigh", icon: ScanLine },
     ],
   },
-  { label: "Admin", items: [{ href: "/backstore/users", label: "Users", icon: Users }] },
+  {
+    label: "Admin",
+    items: [
+      { href: "/backstore/expenses", label: "Expenses", icon: Receipt },
+      { href: "/backstore/users", label: "Users", icon: Users },
+    ],
+  },
 ];
 
 export const NAV = NAV_GROUPS.flatMap((group) => group.items);

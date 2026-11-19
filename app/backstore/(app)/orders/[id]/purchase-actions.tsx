@@ -87,7 +87,7 @@ export function PurchaseActions({ po }: { po: PurchaseOrderDTO }) {
   const dateField = (
     <Field>
       <FieldLabel htmlFor="received-on">Receive date</FieldLabel>
-      <Input id="received-on" type="date" min={minDate} max={today()} value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} required />
+      <Input id="received-on" type="date" min={minDate} max={today()} value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} required className="max-w-48" />
     </Field>
   );
 

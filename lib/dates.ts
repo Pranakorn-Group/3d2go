@@ -39,7 +39,7 @@ export function toBkkDateParam(d: Date) {
   return local.toISOString().slice(0, 10);
 }
 
-export const DATE_RANGE_PRESETS = ["today", "7d", "30d", "month", "custom"] as const;
+export const DATE_RANGE_PRESETS = ["today", "7d", "30d", "month", "all", "custom"] as const;
 export type DateRangePreset = (typeof DATE_RANGE_PRESETS)[number];
 
 export type DateRange = { preset: DateRangePreset; from: Date; toExclusive: Date; label: string };
@@ -47,6 +47,7 @@ export type DateRange = { preset: DateRangePreset; from: Date; toExclusive: Date
 /**
  * Resolves the dashboard's selected range. `custom` needs both `from`/`to` ("YYYY-MM-DD", inclusive);
  * falls back to "month" (the previous default) if the preset is unknown or custom dates are missing/invalid.
+ * `all`'s `from` is a placeholder (epoch) — the caller overrides it with the earliest row it actually has.
  */
 export function resolveDateRange(preset: string | undefined, from: string | undefined, to: string | undefined, now = new Date()): DateRange {
   const today = startOfTodayBkk(now);
@@ -55,6 +56,7 @@ export function resolveDateRange(preset: string | undefined, from: string | unde
   if (preset === "today") return { preset: "today", from: today, toExclusive: tomorrow, label: "Today" };
   if (preset === "7d") return { preset: "7d", from: addDaysBkk(today, -6), toExclusive: tomorrow, label: "Last 7 days" };
   if (preset === "30d") return { preset: "30d", from: addDaysBkk(today, -29), toExclusive: tomorrow, label: "Last 30 days" };
+  if (preset === "all") return { preset: "all", from: new Date(0), toExclusive: tomorrow, label: "All time" };
   if (preset === "custom" && from && to) {
     const start = startOfDayBkk(from);
     const endExclusive = addDaysBkk(startOfDayBkk(to), 1);

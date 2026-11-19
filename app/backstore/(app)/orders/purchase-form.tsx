@@ -169,7 +169,7 @@ export function PurchaseForm({
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="orderedAt">Order date</FieldLabel>
-                  <Input id="orderedAt" type="date" value={orderedAt} onChange={(e) => setOrderedAt(e.target.value)} required />
+                  <Input id="orderedAt" type="date" value={orderedAt} onChange={(e) => setOrderedAt(e.target.value)} required className="max-w-48" />
                 </Field>
               </div>
               <Field>

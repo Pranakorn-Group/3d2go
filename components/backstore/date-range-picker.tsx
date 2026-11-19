@@ -10,6 +10,7 @@ const PRESETS: { key: DateRangePreset; label: string }[] = [
   { key: "7d", label: "7 days" },
   { key: "30d", label: "30 days" },
   { key: "month", label: "This month" },
+  { key: "all", label: "All time" },
 ];
 
 /**

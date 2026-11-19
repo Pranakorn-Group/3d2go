@@ -10,7 +10,7 @@ import { FadeIn } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { addDaysBkk, previousPeriod, resolveDateRange, toBkkDateParam } from "@/lib/dates";
+import { addDaysBkk, previousPeriod, resolveDateRange, startOfMonthBkk, toBkkDateParam } from "@/lib/dates";
 import { channelLabel } from "@/lib/channels";
 import { prisma } from "@/lib/db";
 import { formatDate, formatDateTime, formatSGD, rolls as rollCount } from "@/lib/money";
@@ -55,9 +55,17 @@ function BrandCells({ row }: { row: Omit<BrandRow, "brand"> }) {
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ range?: string; from?: string; to?: string }> }) {
   const { range: rangeKey, from: fromParam, to: toParam } = await searchParams;
   const range = resolveDateRange(rangeKey, fromParam, toParam);
+  if (range.preset === "all") {
+    const [earliestSale, earliestLedger] = await Promise.all([
+      prisma.sale.aggregate({ where: { status: "COMPLETED" }, _min: { completedAt: true } }),
+      prisma.ledgerEntry.aggregate({ _min: { date: true } }),
+    ]);
+    const candidates = [earliestSale._min.completedAt, earliestLedger._min.date].filter((d): d is Date => d !== null);
+    range.from = candidates.length ? new Date(Math.min(...candidates.map((d) => d.getTime()))) : startOfMonthBkk();
+  }
   const prevRange = previousPeriod(range);
 
-  const [products, rangeSales, prevSales, openPOs, reservations, recentSales, rangeItems] = await Promise.all([
+  const [products, rangeSales, prevSales, openPOs, reservations, recentSales, rangeItems, rangeLedger, prevLedger] = await Promise.all([
     prisma.product.findMany({ where: { active: true } }),
     prisma.sale.findMany({
       where: { status: "COMPLETED", completedAt: { gte: range.from, lt: range.toExclusive } },
@@ -86,6 +94,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       where: { sale: { status: "COMPLETED", completedAt: { gte: range.from, lt: range.toExclusive } } },
       select: { qty: true, unitPrice: true, unitCostSgd: true, product: { select: { brand: true } } },
     }),
+    prisma.ledgerEntry.findMany({
+      where: { date: { gte: range.from, lt: range.toExclusive } },
+      select: { date: true, amount: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { date: { gte: prevRange.from, lt: prevRange.toExclusive } },
+      _sum: { amount: true },
+    }),
   ]);
 
   const stockValue = products.reduce((s, p) => s + p.stockQty * Number(p.avgCostSgd), 0);
@@ -94,30 +110,53 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     .filter((p) => p.stockQty - p.reservedQty <= p.lowStockAt)
     .sort((a, b) => a.stockQty - a.reservedQty - (b.stockQty - b.reservedQty));
 
+  const rangeLedgerSum = rangeLedger.reduce((s, e) => s + Number(e.amount), 0);
+  const prevLedgerSum = Number(prevLedger._sum.amount ?? 0);
   const rangeRevenue = rangeSales.reduce((s, x) => s + Number(x.total), 0);
   const rangeCost = rangeSales.reduce((s, x) => s + Number(x.costTotal ?? 0), 0);
   const rangeFees = rangeSales.reduce((s, x) => s + Number(x.platformFee), 0);
-  const rangeOther = rangeSales.reduce((s, x) => s + Number(x.otherAmount), 0);
+  const rangeOther = rangeSales.reduce((s, x) => s + Number(x.otherAmount), 0) + rangeLedgerSum;
   const rangeProfit = rangeRevenue - rangeCost - rangeFees + rangeOther;
   const prevRevenue = Number(prevSales._sum.total ?? 0);
   const prevProfit =
-    prevRevenue - Number(prevSales._sum.costTotal ?? 0) - Number(prevSales._sum.platformFee ?? 0) + Number(prevSales._sum.otherAmount ?? 0);
+    prevRevenue -
+    Number(prevSales._sum.costTotal ?? 0) -
+    Number(prevSales._sum.platformFee ?? 0) +
+    Number(prevSales._sum.otherAmount ?? 0) +
+    prevLedgerSum;
   const revenueDelta = formatDelta(periodDelta(rangeRevenue, prevRevenue));
   const profitDelta = formatDelta(periodDelta(rangeProfit, prevProfit));
 
-  // Daily revenue/profit buckets for the trend chart, zero-filled so gaps show up as gaps.
+  // Revenue/profit buckets for the trend chart, zero-filled so gaps show up as gaps. Day buckets for a
+  // short range; month buckets past ~2 months, so "All time" doesn't render thousands of bars.
   const dayCount = Math.round((range.toExclusive.getTime() - range.from.getTime()) / 86_400_000);
+  const monthly = dayCount > 62;
+  const bucketKey = (d: Date) => (monthly ? toBkkDateParam(d).slice(0, 7) : toBkkDateParam(d));
   const buckets = new Map<string, { revenue: number; profit: number }>();
-  for (let i = 0; i < dayCount; i++) buckets.set(toBkkDateParam(addDaysBkk(range.from, i)), { revenue: 0, profit: 0 });
+  if (monthly) {
+    let d = new Date(range.from.getFullYear(), range.from.getMonth(), 1);
+    const end = new Date(range.toExclusive.getFullYear(), range.toExclusive.getMonth(), 1);
+    while (d <= end) {
+      buckets.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, { revenue: 0, profit: 0 });
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+  } else {
+    for (let i = 0; i < dayCount; i++) buckets.set(toBkkDateParam(addDaysBkk(range.from, i)), { revenue: 0, profit: 0 });
+  }
   for (const s of rangeSales) {
-    const key = toBkkDateParam(s.completedAt!);
-    const b = buckets.get(key);
+    const b = buckets.get(bucketKey(s.completedAt!));
     if (!b) continue;
     b.revenue += Number(s.total);
     b.profit += Number(s.total) - Number(s.costTotal ?? 0) - Number(s.platformFee) + Number(s.otherAmount);
   }
+  for (const e of rangeLedger) {
+    const b = buckets.get(bucketKey(e.date));
+    if (b) b.profit += Number(e.amount);
+  }
   const trendDays = [...buckets.entries()].map(([key, v]) => ({
-    label: new Date(key).toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+    label: monthly
+      ? new Date(`${key}-01`).toLocaleDateString("en-GB", { month: "short", year: "2-digit" })
+      : new Date(key).toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
     ...v,
   }));
 

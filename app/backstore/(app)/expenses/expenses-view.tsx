@@ -180,7 +180,7 @@ export function ExpensesView({ entries }: { entries: LedgerEntryDTO[] }) {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete this entry?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            {categoryLabel(e.category)} · {formatSGD(e.amount)} on {formatDate(e.date)}. This can't be undone.
+                            {categoryLabel(e.category)} · {formatSGD(e.amount)} on {formatDate(e.date)}. This can&apos;t be undone.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
