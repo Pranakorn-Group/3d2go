@@ -333,6 +333,15 @@ model SpoolLoan {
   @@index([paidAt])
 }
 
+/// Autosaved, in-progress POS cart for one admin — so a sale started on one device (phone, counter PC…)
+/// and left without checking out comes back when they open POS again, on any device.
+model PosDraft {
+  userId    String   @id
+  /** The cart + form fields from pos-view.tsx, opaque to the server. */
+  state     Json
+  updatedAt DateTime @updatedAt
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique

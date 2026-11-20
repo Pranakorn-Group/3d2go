@@ -27,6 +27,7 @@ import { round2 } from "@/lib/costing";
 import { formatDayMonth, formatSGD, rolls } from "@/lib/money";
 import { available, type ProductDTO, type SaleChannel } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { clearDraft, saveDraft } from "./actions";
 
 type Mode = "sell" | "reserve";
 /** `serials`: roll labels scanned for this line — at most qty; the rest of the rolls were tapped in. */
@@ -34,6 +35,63 @@ type CartLine = { productId: string; qty: number; unitPrice: string; serials: st
 type Group = { key: string; items: ProductDTO[] };
 /** What the last scan did, shown in the scan dialog. `n` restarts its flash on every scan. */
 type ScanResult = { n: number; ok: true; product: ProductDTO; serial: string } | { n: number; ok: false; error: string };
+
+/** The form fields autosaved as a draft (lib: PosDraft.state) — everything that makes up an in-progress sale. */
+type DraftState = {
+  mode: Mode;
+  cart: CartLine[];
+  discount: string;
+  customerName: string;
+  phone: string;
+  deposit: string;
+  dueDate: string;
+  note: string;
+  channel: SaleChannel;
+  orderNo: string;
+  fee: string;
+  received: string;
+  otherAmount: string;
+  otherNote: string;
+};
+const STRING_DRAFT_KEYS = [
+  "discount",
+  "customerName",
+  "phone",
+  "deposit",
+  "dueDate",
+  "note",
+  "orderNo",
+  "fee",
+  "received",
+  "otherAmount",
+  "otherNote",
+] as const satisfies readonly (keyof DraftState)[];
+
+/** Picks out the fields we recognize from the saved JSON, dropping cart lines for products that no longer exist. */
+function readDraft(raw: unknown, productIds: Set<string>): Partial<DraftState> {
+  if (!raw || typeof raw !== "object") return {};
+  const d = raw as Record<string, unknown>;
+  const out: Partial<DraftState> = {};
+  if (d.mode === "sell" || d.mode === "reserve") out.mode = d.mode;
+  if (Array.isArray(d.cart)) {
+    out.cart = d.cart.filter((l): l is CartLine => {
+      const line = l as Partial<CartLine> | null;
+      return (
+        !!line &&
+        typeof line.productId === "string" &&
+        productIds.has(line.productId) &&
+        typeof line.qty === "number" &&
+        line.qty > 0 &&
+        typeof line.unitPrice === "string" &&
+        Array.isArray(line.serials) &&
+        line.serials.every((s) => typeof s === "string")
+      );
+    });
+  }
+  for (const key of STRING_DRAFT_KEYS) if (typeof d[key] === "string") out[key] = d[key];
+  if (typeof d.channel === "string" && CHANNELS.some((c) => c.value === d.channel)) out.channel = d.channel as SaleChannel;
+  return out;
+}
 
 const groupKey = (p: ProductDTO) => `${p.brand} ${p.type}`;
 const noop = () => () => {};
@@ -75,29 +133,33 @@ export function PosView({
   products,
   paynow,
   restock,
+  draft,
 }: {
   products: ProductDTO[];
   paynow: PayNowConfig | null;
   /** Earliest estimated arrival (ISO) per product on an open purchase order. */
   restock: Record<string, string>;
+  /** The admin's autosaved in-progress cart (PosDraft.state), or null if there isn't one. */
+  draft: unknown;
 }) {
-  const [mode, setMode] = useState<Mode>("sell");
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [initialDraft] = useState(() => readDraft(draft, new Set(products.map((p) => p.id))));
+  const [mode, setMode] = useState<Mode>(initialDraft.mode ?? "sell");
+  const [cart, setCart] = useState<CartLine[]>(initialDraft.cart ?? []);
   const [q, setQ] = useState("");
   const [group, setGroup] = useState<string | null>(null);
   const [inStockOnly, setInStockOnly] = useState(true);
-  const [discount, setDiscount] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [deposit, setDeposit] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [note, setNote] = useState("");
-  const [channel, setChannel] = useState<SaleChannel>("STORE");
-  const [orderNo, setOrderNo] = useState("");
-  const [fee, setFee] = useState("");
-  const [received, setReceived] = useState("");
-  const [otherAmount, setOtherAmount] = useState("");
-  const [otherNote, setOtherNote] = useState("");
+  const [discount, setDiscount] = useState(initialDraft.discount ?? "");
+  const [customerName, setCustomerName] = useState(initialDraft.customerName ?? "");
+  const [phone, setPhone] = useState(initialDraft.phone ?? "");
+  const [deposit, setDeposit] = useState(initialDraft.deposit ?? "");
+  const [dueDate, setDueDate] = useState(initialDraft.dueDate ?? "");
+  const [note, setNote] = useState(initialDraft.note ?? "");
+  const [channel, setChannel] = useState<SaleChannel>(initialDraft.channel ?? "STORE");
+  const [orderNo, setOrderNo] = useState(initialDraft.orderNo ?? "");
+  const [fee, setFee] = useState(initialDraft.fee ?? "");
+  const [received, setReceived] = useState(initialDraft.received ?? "");
+  const [otherAmount, setOtherAmount] = useState(initialDraft.otherAmount ?? "");
+  const [otherNote, setOtherNote] = useState(initialDraft.otherNote ?? "");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [qr, setQr] = useState<PayNowRequest | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
@@ -106,6 +168,18 @@ export function PosView({
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [pending, startTransition] = useTransition();
   const mounted = useMounted();
+  // Skips the autosave effect's very first run so restoring a draft doesn't immediately re-save it
+  // (or, with no draft and an empty cart, delete a draft row that was never created).
+  const skipAutosave = useRef(true);
+
+  useEffect(() => {
+    if (initialDraft.cart?.length) {
+      const n = initialDraft.cart.reduce((s, l) => s + l.qty, 0);
+      toast(`Picked up where you left off: ${rolls(n)} still in the cart`, { icon: "🛒" });
+    }
+    // Runs once, on mount — initialDraft is set lazily and never changes after.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   // Products arrive sorted by brand, type, color, so groups keep that order.
@@ -223,7 +297,25 @@ export function PosView({
     setReceived("");
     setOtherAmount("");
     setOtherNote("");
+    // Right away, not through the debounced autosave below — otherwise a page navigated away from
+    // right after checkout could cancel that save and leave the already-sold cart as "the draft".
+    skipAutosave.current = true;
+    void clearDraft();
   }
+
+  // Autosaves the in-progress sale so it comes back on any device if the admin never checks out.
+  // Debounced: waits for a pause in typing/tapping rather than saving on every keystroke.
+  useEffect(() => {
+    if (skipAutosave.current) {
+      skipAutosave.current = false;
+      return;
+    }
+    const t = setTimeout(() => {
+      if (cart.length === 0) void clearDraft();
+      else void saveDraft({ mode, cart, discount, customerName, phone, deposit, dueDate, note, channel, orderNo, fee, received, otherAmount, otherNote });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [mode, cart, discount, customerName, phone, deposit, dueDate, note, channel, orderNo, fee, received, otherAmount, otherNote]);
 
   /**
    * The seller usually knows the payout credited, not the fee — back out the fee from it. A payout

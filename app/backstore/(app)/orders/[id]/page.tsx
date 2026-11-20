@@ -12,6 +12,7 @@ import { purchaseInclude, toProduct, toPurchase } from "@/lib/dto";
 import { estimateArrival } from "@/lib/eta";
 import { formatDate } from "@/lib/money";
 import { PurchaseForm } from "../purchase-form";
+import { PrintLabelsPicker } from "./print-labels-picker";
 import { PurchaseActions } from "./purchase-actions";
 
 export default async function PurchasePage({ params }: { params: Promise<{ id: string }> }) {
@@ -50,22 +51,28 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
       </PageHeader>
 
       {editable ? (
-        <PurchaseForm key={row.updatedAt.toISOString()} products={products} catalog={catalog} lastPrices={lastPrices} po={po} />
+        <div className="grid gap-4">
+          <PurchaseForm key={row.updatedAt.toISOString()} products={products} catalog={catalog} lastPrices={lastPrices} po={po} />
+          <PrintLabelsPicker items={po.items} />
+        </div>
       ) : (
-        <Card className="max-w-2xl">
-          <CardHeader>
-            <CardTitle>{po.status === "RECEIVED" ? "Landed cost" : "Items"}</CardTitle>
-            <CardDescription>
-              {po.status === "RECEIVED"
-                ? "SGD paid split across lines by value → ต้นทุนต่อม้วน added to stock."
-                : "This order was cancelled; no stock was added."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CostBreakdown lines={po.items} currency={po.currency} paidSgd={po.totalPaidSgd} thbPerSgd={po.estRate} />
-            {po.note && <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-sm">{po.note}</p>}
-          </CardContent>
-        </Card>
+        <div className="grid gap-4">
+          <Card className="max-w-2xl">
+            <CardHeader>
+              <CardTitle>{po.status === "RECEIVED" ? "Landed cost" : "Items"}</CardTitle>
+              <CardDescription>
+                {po.status === "RECEIVED"
+                  ? "SGD paid split across lines by value → ต้นทุนต่อม้วน added to stock."
+                  : "This order was cancelled; no stock was added."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CostBreakdown lines={po.items} currency={po.currency} paidSgd={po.totalPaidSgd} thbPerSgd={po.estRate} />
+              {po.note && <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-sm">{po.note}</p>}
+            </CardContent>
+          </Card>
+          {po.status === "RECEIVED" && <PrintLabelsPicker items={po.items} />}
+        </div>
       )}
     </>
   );

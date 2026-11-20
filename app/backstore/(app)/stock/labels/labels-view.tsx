@@ -32,10 +32,23 @@ export type { LabelPresetDTO };
  * `labeled`: per product, printed labels not sold yet — the rolls in stock that already have one (or will,
  * once pre-printed labels go on).
  */
-export function LabelsView({ products, presets, labeled }: { products: ProductDTO[]; presets: LabelPresetDTO[]; labeled: Record<string, number> }) {
+export function LabelsView({
+  products,
+  presets,
+  labeled,
+  initialQty,
+}: {
+  products: ProductDTO[];
+  presets: LabelPresetDTO[];
+  labeled: Record<string, number>;
+  /** Pre-filled quantities, e.g. handed over from a purchase order's "Print roll labels" picker. */
+  initialQty?: Record<string, number>;
+}) {
   const ctl = useLabelLayout("3d2go.rollLabels");
   const { mounted, layout, setSkip } = ctl;
-  const [qty, setQty] = useState<Record<string, string>>({});
+  const [qty, setQty] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries(initialQty ?? {}).map(([id, n]) => [id, String(n)])),
+  );
   const [q, setQ] = useState("");
   const [each, setEach] = useState("1");
   /** Serials made by the last print run; null while choosing what to print. */
