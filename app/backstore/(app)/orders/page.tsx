@@ -3,19 +3,14 @@ import Link from "next/link";
 import { Plus, Truck } from "lucide-react";
 import { EmptyState } from "@/components/backstore/empty-state";
 import { PageHeader } from "@/components/backstore/page-header";
-import { StatusBadge } from "@/components/backstore/status-badge";
-import { Stagger, StaggerItem } from "@/components/motion";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { sumValue } from "@/lib/costing";
 import { getLeadTimes } from "@/lib/catalog";
 import { prisma } from "@/lib/db";
 import { purchaseInclude, toPurchase } from "@/lib/dto";
 import { estimateArrival } from "@/lib/eta";
 import type { PurchaseStatus } from "@/lib/generated/prisma/enums";
-import { formatDate, formatMoney, formatSGD, rolls } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { OrdersTable } from "./orders-table";
 
 export const metadata: Metadata = { title: "Purchase orders" };
 
@@ -39,9 +34,13 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     prisma.purchaseOrder.groupBy({ by: ["status"], _count: true }),
     getLeadTimes(),
   ]);
-  const etaOf = (o: (typeof orders)[number]) =>
-    o.status === "PLACED" || o.status === "SHIPPED" ? estimateArrival(o, lead) : null;
   const orders = rows.map(toPurchase);
+  const etas = Object.fromEntries(
+    rows.map((row, i) => {
+      const eta = row.status === "PLACED" || row.status === "SHIPPED" ? estimateArrival(row, lead) : null;
+      return [orders[i].id, eta ? eta.toISOString() : null];
+    }),
+  );
   const count = (statuses: readonly string[]) =>
     counts.filter((c) => statuses.includes(c.status)).reduce((s, c) => s + c._count, 0);
 
@@ -75,72 +74,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           Place an order when you buy filament, then receive it to add stock.
         </EmptyState>
       ) : (
-        <>
-          <Card className="hidden py-0 md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-4">Order</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Rolls</TableHead>
-                  <TableHead className="text-right">Items total</TableHead>
-                  <TableHead className="text-right">Paid</TableHead>
-                  <TableHead className="pr-4">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.map((o) => (
-                  <TableRow key={o.id} className="relative">
-                    <TableCell className="pl-4 font-medium">
-                      <Link href={`/backstore/orders/${o.id}`} className="after:absolute after:inset-0">
-                        {o.code}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{o.supplier}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDate(o.orderedAt)}
-                      {o.receivedAt && <span className="block text-xs">received {formatDate(o.receivedAt)}</span>}
-                      {etaOf(o) && <span className="block text-xs">est. {formatDate(etaOf(o))}</span>}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{o.items.reduce((s, i) => s + i.qty, 0)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatMoney(sumValue(o.items), o.currency)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{o.totalPaidSgd === null ? "—" : formatSGD(o.totalPaidSgd)}</TableCell>
-                    <TableCell className="pr-4">
-                      <StatusBadge status={o.status} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-
-          <Stagger className="grid gap-2 md:hidden">
-            {orders.map((o, index) => (
-              <StaggerItem key={o.id} index={index}>
-                <Link href={`/backstore/orders/${o.id}`}>
-                  <Card className="gap-1 px-4 py-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{o.code}</span>
-                      <StatusBadge status={o.status} />
-                    </div>
-                    <div className="text-sm">{o.supplier}</div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>
-                        {formatDate(o.orderedAt)} · {rolls(o.items.reduce((s, i) => s + i.qty, 0))}
-                        {etaOf(o) && ` · est. ${formatDate(etaOf(o))}`}
-                      </span>
-                      <span className="tabular-nums">
-                        {formatMoney(sumValue(o.items), o.currency)}
-                        {o.totalPaidSgd !== null && ` · ${formatSGD(o.totalPaidSgd)}`}
-                      </span>
-                    </div>
-                  </Card>
-                </Link>
-              </StaggerItem>
-            ))}
-          </Stagger>
-        </>
+        <OrdersTable orders={orders} etas={etas} />
       )}
     </>
   );
